@@ -1,0 +1,74 @@
+# ==============================================================================
+# Git Ignore — AppEdu (Monorepo Backend + Frontend)
+# ==============================================================================
+
+# IDEs & System
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# Backup folders
+*.git_backup/
+.git_backup/
+
+# ------------------------------------------------------------------------------
+# Backend (Python / FastAPI)
+# ------------------------------------------------------------------------------
+Backend/venv/
+Backend/env/
+Backend/.venv/
+Backend/ENV/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Sensitive env files
+Backend/.env
+Backend/.env.local
+Backend/.env.production
+!Backend/.env.example
+.env
+.env.local
+.env.production
+!.env.example
+
+# Local SQLite databases
+Backend/*.db
+Backend/*.sqlite3
+*.db
+*.sqlite3
+
+# Logs & temp
+Backend/logs/
+Backend/tmp/
+logs/
+*.log
+
+# ------------------------------------------------------------------------------
+# Frontend (Node / Vite / React)
+# ------------------------------------------------------------------------------
+Frontend/node_modules/
+node_modules/
+Frontend/dist/
+Frontend/dist-ssr/
+dist/
+dist-ssr/
+Frontend/*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

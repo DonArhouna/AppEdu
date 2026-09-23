@@ -1,0 +1,246 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ─── LIGHT MODE ─── */
+    --background: 220 20% 97%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 213 94% 48%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 94%;
+    --secondary-foreground: 222 47% 20%;
+
+    --muted: 210 40% 94%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 213 94% 95%;
+    --accent-foreground: 213 94% 40%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 213 94% 48%;
+
+    --radius: 0.875rem;
+
+    /* ─── NAVBAR (Light) ─── */
+    --navbar-background: 0 0% 100%;
+    --navbar-foreground: 222 47% 11%;
+    --navbar-border: 214 32% 91%;
+
+    /* ─── SIDEBAR (Light) ─── */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 213 94% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 213 94% 95%;
+    --sidebar-accent-foreground: 213 94% 40%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-ring: 213 94% 48%;
+    --sidebar-muted: 215 16% 47%;
+
+    /* ─── SHADOWS ─── */
+    --shadow-xs:  0 1px 2px 0 rgb(0 0 0 / 0.04);
+    --shadow-sm:  0 2px 8px  0 rgb(0 0 0 / 0.06);
+    --shadow-md:  0 4px 16px 0 rgb(0 0 0 / 0.09);
+    --shadow-lg:  0 8px 32px 0 rgb(0 0 0 / 0.12);
+    --shadow-xl:  0 16px 48px 0 rgb(0 0 0 / 0.15);
+    --shadow-card: 0 2px 10px rgba(0,0,0,0.06);
+    --shadow-floating: 0 8px 30px rgba(0,0,0,0.12);
+  }
+
+  .dark {
+    /* ─── DARK MODE ─── */
+    --background: 222 47% 7%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 40% 11%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 40% 11%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 213 94% 60%;
+    --primary-foreground: 222 47% 7%;
+
+    --secondary: 222 40% 18%;
+    --secondary-foreground: 210 40% 90%;
+
+    --muted: 222 40% 16%;
+    --muted-foreground: 215 16% 58%;
+
+    --accent: 222 40% 18%;
+    --accent-foreground: 213 94% 65%;
+
+    --destructive: 0 72% 56%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 50%;
+    --success-foreground: 222 47% 7%;
+
+    --warning: 38 92% 58%;
+    --warning-foreground: 222 47% 7%;
+
+    --border: 222 40% 18%;
+    --input: 222 40% 18%;
+    --ring: 213 94% 60%;
+
+    /* ─── NAVBAR (Dark) ─── */
+    --navbar-background: 222 40% 11%;
+    --navbar-foreground: 210 40% 96%;
+    --navbar-border: 222 40% 18%;
+
+    /* ─── SIDEBAR (Dark) ─── */
+    --sidebar-background: 222 40% 9%;
+    --sidebar-foreground: 210 40% 90%;
+    --sidebar-primary: 213 94% 60%;
+    --sidebar-primary-foreground: 222 47% 7%;
+    --sidebar-accent: 222 40% 16%;
+    --sidebar-accent-foreground: 213 94% 70%;
+    --sidebar-border: 222 40% 16%;
+    --sidebar-ring: 213 94% 60%;
+    --sidebar-muted: 215 16% 50%;
+
+    --shadow-card: 0 2px 10px rgba(0,0,0,0.3);
+    --shadow-floating: 0 8px 30px rgba(0,0,0,0.4);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    transition: background-color 0.25s ease, border-color 0.25s ease, color 0.15s ease, box-shadow 0.25s ease;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ─── SCROLLBAR GLOBALE ÉLÉGANTE (6px, coins arrondis, teinte neutre discrète) ─── */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.25) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.25);
+    border-radius: 9999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    transition: background-color 0.2s ease;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* Masquage complet de la scrollbar pour éléments avec la classe .scrollbar-hide (ex: Sidebar) */
+  .scrollbar-hide {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.25) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar { width: 5px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.25);
+    border-radius: 10px;
+  }
+}
+
+@layer components {
+  /* ─── CARD DESIGN SYSTEM ─── */
+  .card-base {
+    @apply bg-card text-card-foreground rounded-2xl border border-border/60;
+    box-shadow: var(--shadow-card);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .card-base:hover {
+    box-shadow: var(--shadow-md);
+    @apply border-border;
+  }
+
+  .card-kpi {
+    @apply card-base overflow-hidden relative;
+  }
+
+  /* ─── FLOATING PANELS ─── */
+  .panel-floating {
+    box-shadow: var(--shadow-floating);
+    @apply rounded-2xl border border-border/50;
+  }
+
+  /* ─── SIDEBAR ITEM ─── */
+  .sidebar-item {
+    @apply flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium transition-all duration-150 w-full;
+    color: hsl(var(--sidebar-muted));
+  }
+  .sidebar-item:hover {
+    @apply bg-sidebar-accent text-sidebar-foreground;
+  }
+  .sidebar-item.active {
+    background: hsl(var(--primary) / 0.12);
+    color: hsl(var(--sidebar-primary));
+    @apply font-semibold;
+  }
+
+  /* ─── BADGE PULSE ─── */
+  @keyframes badge-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+  .badge-pulse {
+    animation: badge-pulse 2s ease-in-out infinite;
+  }
+
+  /* ─── GRADIENT TEXT ─── */
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.7));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}

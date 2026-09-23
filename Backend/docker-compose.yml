@@ -1,0 +1,60 @@
+services:
+  # ============================================================================
+  # EduManagePro — Backend API FastAPI
+  # ============================================================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: emp_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=True
+      - TENANT_MODE=standalone
+      - SECRET_KEY=emp_dev_secret_key_change_in_production_very_secure_token
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@emp_postgres:5432/edumanagepro
+      - DB_HOST=emp_postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=edumanagepro
+      - BACKEND_CORS_ORIGINS=http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080
+    depends_on:
+      emp_postgres:
+        condition: service_healthy
+    networks:
+      - emp_network
+
+  # ============================================================================
+  # Base de Données PostgreSQL 16
+  # ============================================================================
+  emp_postgres:
+    image: postgres:16-alpine
+    container_name: emp_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: edumanagepro
+    ports:
+      - "5433:5432"
+    volumes:
+      - emp_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d edumanagepro"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - emp_network
+
+volumes:
+  emp_postgres_data:
+    driver: local
+
+networks:
+  emp_network:
+    driver: bridge

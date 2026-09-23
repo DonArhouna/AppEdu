@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="empGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1d4ed8" />
+      <stop offset="60%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="2" stdDeviation="1.5" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Background Squircle -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#empGrad)" />
+  <rect x="2.5" y="2.5" width="59" height="59" rx="14.5" fill="none" stroke="rgba(255, 255, 255, 0.25)" stroke-width="1" />
+
+  <!-- Academic Mortarboard / Graduation Cap Icon -->
+  <g filter="url(#shadow)" transform="translate(0, 1)">
+    <!-- Cap Diamond -->
+    <polygon points="32,9 50,17 32,25 14,17" fill="url(#goldGrad)" />
+    <!-- Cap Skull Base -->
+    <path d="M20,20.5 L20,27 C20,31.5 44,31.5 44,27 L44,20.5" fill="none" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" />
+    <!-- Tassel -->
+    <path d="M46,18.5 L51,24 L51,28" fill="none" stroke="#fef08a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="51" cy="28.5" r="1.2" fill="#fef08a" />
+  </g>
+
+  <!-- Monogram EMP -->
+  <text x="32" y="52" 
+        font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
+        font-size="18" 
+        font-weight="900" 
+        letter-spacing="0.8px" 
+        fill="#ffffff" 
+        text-anchor="middle"
+        filter="url(#shadow)">
+    EMP
+  </text>
+</svg>

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="empLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e40af" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="goldLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <filter id="logoShadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-opacity="0.3" />
+    </filter>
+  </defs>
+
+  <!-- Background Squircle -->
+  <rect x="4" y="4" width="120" height="120" rx="30" fill="url(#empLogoGrad)" filter="url(#logoShadow)" />
+  <rect x="5" y="5" width="118" height="118" rx="29" fill="none" stroke="rgba(255, 255, 255, 0.25)" stroke-width="2" />
+
+  <!-- Academic Mortarboard / Graduation Cap Icon -->
+  <g transform="translate(0, 4)">
+    <polygon points="64,18 100,34 64,50 28,34" fill="url(#goldLogoGrad)" />
+    <path d="M40,41 L40,54 C40,63 88,63 88,54 L88,41" fill="none" stroke="#d97706" stroke-width="4.5" stroke-linecap="round" />
+    <path d="M92,37 L102,48 L102,56" fill="none" stroke="#fef08a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="102" cy="57" r="2.5" fill="#fef08a" />
+  </g>
+
+  <!-- Monogram EMP -->
+  <text x="64" y="104" 
+        font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
+        font-size="36" 
+        font-weight="900" 
+        letter-spacing="1.5px" 
+        fill="#ffffff" 
+        text-anchor="middle">
+    EMP
+  </text>
+</svg>

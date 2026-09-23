@@ -1,0 +1,31 @@
+# ==============================================================================
+# EduManagePro (EMP) — Backend Dependencies (FastAPI + SQLAlchemy 2.0 Async)
+# ==============================================================================
+# Pour activer l'environnement virtuel :
+#   Windows : .\venv\Scripts\activate
+#   Linux/Mac : source venv/bin/activate
+#
+# Pour installer les dépendances :
+#   pip install -r requirements.txt
+# ==============================================================================
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.8.0
+pydantic-settings>=2.4.0
+email-validator>=2.2.0
+
+# Base de données & Migrations
+sqlalchemy>=2.0.32
+asyncpg>=0.29.0
+aiosqlite>=0.20.0
+alembic>=1.13.2
+
+# Sécurité & Authentification
+pyjwt>=2.9.0
+bcrypt>=4.0.1
+python-multipart>=0.0.9
+
+# Utilitaires & Environnement
+python-dotenv>=1.0.1
+httpx>=0.27.0
