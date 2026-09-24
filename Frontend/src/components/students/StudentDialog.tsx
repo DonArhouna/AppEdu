@@ -21,7 +21,20 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Lock, UserCheck, RefreshCw, Sparkles, Building, Calendar } from "lucide-react";
 import { toast } from "sonner";
-import { getAcademicSessions, AcademicSession } from "@/services/academicSessionService";
+import { etudiantsApi, sessionsApi, structureApi } from "@/services/apiClient";
+import type { AcademicSession as ApiAcademicSession, Student as StudentDto } from "@/services/apiTypes";
+
+interface AcademicSessionOption {
+  id: string;
+  nom: string;
+  code: string;
+  anneeAcademique: string;
+  dateDebut: string;
+  dateFin: string;
+  statut: string;
+  description: string;
+  periodes: ApiAcademicSession["periodes"];
+}
 
 export interface Student {
   id: string;
@@ -40,6 +53,7 @@ export interface Student {
   typeInscription?: "nouvelle" | "reinscription";
   etablissementOrigine?: string;
   creditsValide?: number;
+  creditsValides?: number;
   sessionId?: string; // Rattachement Session Académique
 }
 
@@ -58,10 +72,33 @@ export const StudentDialog = ({
 }: StudentDialogProps) => {
   const [typeInscription, setTypeInscription] = useState<"nouvelle" | "reinscription">("nouvelle");
   const [autoMatricule, setAutoMatricule] = useState("");
-  const [academicSessions, setAcademicSessions] = useState<AcademicSession[]>([]);
+  const [academicSessions, setAcademicSessions] = useState<AcademicSessionOption[]>([]);
+  const [filieres, setFilieres] = useState<{ id: string; nom: string }[]>([]);
 
   useEffect(() => {
-    setAcademicSessions(getAcademicSessions());
+    if (!open) return;
+    const loadSessions = async () => {
+      const [sessionResult, filiereResult] = await Promise.all([
+        sessionsApi.getAll(),
+        structureApi.getFilieres(),
+      ]);
+      if (filiereResult.data) setFilieres(filiereResult.data as { id: string; nom: string }[]);
+      if (sessionResult.error || !sessionResult.data) return;
+      setAcademicSessions(
+        sessionResult.data.map((session) => ({
+          id: session.id,
+          nom: session.nom,
+          code: session.code,
+          anneeAcademique: session.annee_academique,
+          dateDebut: session.date_debut,
+          dateFin: session.date_fin,
+          statut: session.statut,
+          description: session.description || "",
+          periodes: session.periodes || [],
+        }))
+      );
+    };
+    void loadSessions();
   }, [open]);
 
   const [formData, setFormData] = useState<Student>({
@@ -72,30 +109,28 @@ export const StudentDialog = ({
     telephone: "",
     dateNaissance: "",
     lieuNaissance: "",
-    filiere: "Génie Informatique",
-    niveau: "Licence 1",
-    cycle: "Licence",
-    promotion: "2025-2026",
+    filiere: "",
+    niveau: "",
+    cycle: "",
+    promotion: "",
     statut: "actif",
     matricule: "",
     typeInscription: "nouvelle",
     etablissementOrigine: "",
-    creditsValide: 60,
-    sessionId: "SES-2025-MAIN",
+    creditsValide: 0,
+    sessionId: "",
   });
 
   useEffect(() => {
     if (student) {
       setFormData({
         ...student,
-        sessionId: student.sessionId !== undefined ? student.sessionId : "SES-2025-MAIN",
+        sessionId: student.sessionId || "",
       });
       setAutoMatricule(student.matricule);
       setTypeInscription(student.typeInscription || "reinscription");
     } else {
-      // Generate preview matricule based on nomenclature settings
-      const generated = `2025-INF-${Math.floor(1000 + Math.random() * 9000)}`;
-      setAutoMatricule(generated);
+      const generated = "";
       setFormData({
         id: "",
         nom: "",
@@ -104,16 +139,16 @@ export const StudentDialog = ({
         telephone: "",
         dateNaissance: "",
         lieuNaissance: "",
-        filiere: "Génie Informatique",
-        niveau: "Licence 1",
-        cycle: "Licence",
-        promotion: "2025-2026",
+        filiere: "",
+        niveau: "",
+        cycle: "",
+        promotion: "",
         statut: "actif",
         matricule: generated,
         typeInscription: "nouvelle",
         etablissementOrigine: "",
-        creditsValide: 60,
-        sessionId: "SES-2025-MAIN",
+        creditsValide: 0,
+        sessionId: "",
       });
     }
   }, [student, open]);
@@ -127,7 +162,7 @@ export const StudentDialog = ({
 
     const finalStudent: Student = {
       ...formData,
-      id: formData.id || `ETU${Date.now()}`,
+      id: formData.id,
       matricule: autoMatricule,
       typeInscription,
     };
@@ -164,13 +199,9 @@ export const StudentDialog = ({
                 </Label>
                 <RadioGroup
                   value={typeInscription}
-                  onValueChange={(val: any) => {
-                    setTypeInscription(val);
-                    if (val === "nouvelle") {
-                      setAutoMatricule(`2025-INF-${Math.floor(1000 + Math.random() * 9000)}`);
-                    } else {
-                      setAutoMatricule("");
-                    }
+                  onValueChange={(val: string) => {
+                    setTypeInscription(val === "reinscription" ? "reinscription" : "nouvelle");
+                    setAutoMatricule("");
                   }}
                   className="grid grid-cols-2 gap-4 pt-2"
                 >
@@ -201,30 +232,39 @@ export const StudentDialog = ({
                   <div className="flex gap-2">
                     <Input
                       id="search-matricule"
-                      placeholder="Ex: 2024-INF-0042"
+                      placeholder="Saisissez le matricule"
                       value={autoMatricule}
                       onChange={(e) => setAutoMatricule(e.target.value)}
                     />
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={() => {
-                        if (autoMatricule) {
-                          // Simulate API lookup
-                          setFormData({
-                            ...formData,
-                            nom: "Dupont",
-                            prenom: "Marie",
-                            email: "marie.dupont@email.com",
-                            telephone: "0700112233",
-                            filiere: "Génie Informatique",
-                            cycle: "Licence",
-                            niveau: "Licence 2", // Upgraded from L1
-                          });
-                          toast.success("Dossier étudiant trouvé. Les informations ont été pré-remplies.");
-                        } else {
+                      onClick={async () => {
+                        if (!autoMatricule) {
                           toast.error("Veuillez saisir un matricule.");
+                          return;
                         }
+                        const result = await etudiantsApi.getAll({ search: autoMatricule });
+                        const found = (result.data || []).find(
+                          (candidate: StudentDto) => candidate.matricule === autoMatricule
+                        );
+                        if (result.error || !found) {
+                          toast.error("Aucun dossier trouvé pour ce matricule.");
+                          return;
+                        }
+                        setFormData((current) => ({
+                          ...current,
+                          id: found.id,
+                          nom: found.nom || "",
+                          prenom: found.prenom || "",
+                          email: found.email || "",
+                          telephone: found.telephone || "",
+                          filiere: found.filiere || "",
+                          niveau: found.niveau || "",
+                          cycle: found.niveau?.startsWith("Master") ? "Master" : "",
+                          sessionId: found.session_id || "",
+                        }));
+                        toast.success("Dossier étudiant chargé depuis l'API.");
                       }}
                     >
                       Rechercher
@@ -270,7 +310,7 @@ export const StudentDialog = ({
                 id="nom"
                 value={formData.nom}
                 onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                placeholder="Ex: Dupont"
+                placeholder="Nom"
                 required
               />
             </div>
@@ -280,7 +320,7 @@ export const StudentDialog = ({
                 id="prenom"
                 value={formData.prenom}
                 onChange={(e) => setFormData({ ...formData, prenom: e.target.value })}
-                placeholder="Ex: Marie"
+                placeholder="Prénom"
                 required
               />
             </div>
@@ -294,7 +334,7 @@ export const StudentDialog = ({
                 type="email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="marie.dupont@email.com"
+                placeholder="Adresse email"
                 required
               />
             </div>
@@ -304,7 +344,7 @@ export const StudentDialog = ({
                 id="telephone"
                 value={formData.telephone}
                 onChange={(e) => setFormData({ ...formData, telephone: e.target.value })}
-                placeholder="+225 07 00 11 22 33"
+                placeholder="Numéro de téléphone"
               />
             </div>
           </div>
@@ -313,20 +353,12 @@ export const StudentDialog = ({
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="cycle">Cycle Académique *</Label>
-              <Select
+              <Input
+                id="cycle"
                 value={formData.cycle}
-                onValueChange={(val) => setFormData({ ...formData, cycle: val })}
-              >
-                <SelectTrigger id="cycle">
-                  <SelectValue placeholder="Cycle" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Licence">Cycle Licence (L1, L2, L3)</SelectItem>
-                  <SelectItem value="Master">Cycle Master (M1, M2)</SelectItem>
-                  <SelectItem value="Doctorat">Cycle Doctorat (D1, D2, D3)</SelectItem>
-                  <SelectItem value="BTS_DUT">BTS / DUT (Bac+2)</SelectItem>
-                </SelectContent>
-              </Select>
+                onChange={(e) => setFormData({ ...formData, cycle: e.target.value })}
+                placeholder="Cycle"
+              />
             </div>
 
             <div className="space-y-2">
@@ -339,31 +371,23 @@ export const StudentDialog = ({
                   <SelectValue placeholder="Filière" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Génie Informatique">Génie Informatique</SelectItem>
-                  <SelectItem value="Gestion & Finance">Gestion & Finance</SelectItem>
-                  <SelectItem value="Commerce & Marketing">Commerce & Marketing</SelectItem>
-                  <SelectItem value="Droit & Science Po">Droit & Science Po</SelectItem>
+                  {filieres.map((filiere) => (
+                    <SelectItem key={filiere.id} value={filiere.nom}>
+                      {filiere.nom}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="niveau">Niveau / Classe *</Label>
-              <Select
+              <Input
+                id="niveau"
                 value={formData.niveau}
-                onValueChange={(value) => setFormData({ ...formData, niveau: value })}
-              >
-                <SelectTrigger id="niveau">
-                  <SelectValue placeholder="Niveau" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Licence 1">Licence 1 (L1)</SelectItem>
-                  <SelectItem value="Licence 2">Licence 2 (L2)</SelectItem>
-                  <SelectItem value="Licence 3">Licence 3 (L3)</SelectItem>
-                  <SelectItem value="Master 1">Master 1 (M1)</SelectItem>
-                  <SelectItem value="Master 2">Master 2 (M2)</SelectItem>
-                </SelectContent>
-              </Select>
+                onChange={(e) => setFormData({ ...formData, niveau: e.target.value })}
+                placeholder="Niveau ou classe"
+              />
             </div>
           </div>
 
@@ -408,7 +432,7 @@ export const StudentDialog = ({
               </Label>
               <Input
                 id="orig"
-                placeholder="Ex: Université Félix Houphouët-Boigny"
+                placeholder="Établissement d'origine"
                 value={formData.etablissementOrigine || ""}
                 onChange={(e) => setFormData({ ...formData, etablissementOrigine: e.target.value })}
               />

@@ -13,7 +13,9 @@ interface Matiere {
   type: "UE" | "ECUE";
   credits: number;
   coefficient: number;
-  heures: number;
+  heures_cm: number;
+  heures_td: number;
+  heures_tp: number;
   filiere: string;
   niveau: string;
   semestre: string;
@@ -26,16 +28,15 @@ interface UE {
   id: string;
   code: string;
   nom: string;
+  filiere?: string;
+  niveau?: string;
+  semestre?: string;
 }
 
-// Mock UEs - à remplacer par des données réelles
-const mockUEs: UE[] = [
-  { id: "1", code: "UE-INF301", nom: "Développement Web" },
-  { id: "2", code: "UE-INF302", nom: "Base de données" },
-  { id: "3", code: "UE-INF303", nom: "Réseaux et Systèmes" },
-  { id: "4", code: "UE-GES201", nom: "Comptabilité Générale" },
-  { id: "5", code: "UE-MKT101", nom: "Marketing Fondamental" },
-];
+interface FiliereOption {
+  id: string;
+  nom: string;
+}
 
 interface MatiereDialogProps {
   open: boolean;
@@ -44,16 +45,19 @@ interface MatiereDialogProps {
   matiere: Matiere | null;
   fixedType?: "ECUE";
   ues?: UE[];
+  filieres?: FiliereOption[];
 }
 
-export function MatiereDialog({ open, onOpenChange, onSave, matiere, fixedType, ues = mockUEs }: MatiereDialogProps) {
+export function MatiereDialog({ open, onOpenChange, onSave, matiere, fixedType, ues = [], filieres = [] }: MatiereDialogProps) {
   const [formData, setFormData] = useState<Partial<Matiere>>({
     code: "",
     nom: "",
     type: fixedType || "UE",
     credits: 0,
     coefficient: 0,
-    heures: 0,
+    heures_cm: 0,
+    heures_td: 0,
+    heures_tp: 0,
     filiere: "",
     niveau: "",
     semestre: "",
@@ -72,7 +76,9 @@ export function MatiereDialog({ open, onOpenChange, onSave, matiere, fixedType, 
         type: fixedType || "UE",
         credits: 0,
         coefficient: 0,
-        heures: 0,
+        heures_cm: 0,
+    heures_td: 0,
+    heures_tp: 0,
         filiere: "",
         niveau: "",
         semestre: "",
@@ -81,7 +87,7 @@ export function MatiereDialog({ open, onOpenChange, onSave, matiere, fixedType, 
         ueId: "",
       });
     }
-  }, [matiere, open]);
+  }, [matiere, open, fixedType]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,7 +112,7 @@ export function MatiereDialog({ open, onOpenChange, onSave, matiere, fixedType, 
                   id="code"
                   value={formData.code}
                   onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                  placeholder="Ex: INF301"
+                  placeholder="Code matière"
                   required
                 />
               </div>
@@ -141,7 +147,16 @@ export function MatiereDialog({ open, onOpenChange, onSave, matiere, fixedType, 
                 <Label htmlFor="ueId">Unité d'Enseignement (UE) *</Label>
                 <Select
                   value={formData.ueId}
-                  onValueChange={(value) => setFormData({ ...formData, ueId: value })}
+                  onValueChange={(value) => {
+                    const ue = ues.find((item) => item.id === value);
+                    setFormData({
+                      ...formData,
+                      ueId: value,
+                      filiere: ue?.filiere || formData.filiere,
+                      niveau: ue?.niveau || formData.niveau,
+                      semestre: ue?.semestre || formData.semestre,
+                    });
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Sélectionner l'UE parente" />
@@ -163,44 +178,31 @@ export function MatiereDialog({ open, onOpenChange, onSave, matiere, fixedType, 
                 id="nom"
                 value={formData.nom}
                 onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                placeholder="Ex: Programmation Web"
+                placeholder="Intitulé de la matière"
                 required
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="credits">Crédits *</Label>
-                <Input
-                  id="credits"
-                  type="number"
-                  min="0"
-                  value={formData.credits}
-                  onChange={(e) => setFormData({ ...formData, credits: parseInt(e.target.value) })}
-                  required
-                />
+                <Input id="credits" type="number" min="0" value={formData.credits} onChange={(e) => setFormData({ ...formData, credits: parseInt(e.target.value) })} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="coefficient">Coefficient *</Label>
-                <Input
-                  id="coefficient"
-                  type="number"
-                  min="0"
-                  value={formData.coefficient}
-                  onChange={(e) => setFormData({ ...formData, coefficient: parseInt(e.target.value) })}
-                  required
-                />
+                <Input id="coefficient" type="number" min="0" step="0.1" value={formData.coefficient} onChange={(e) => setFormData({ ...formData, coefficient: parseFloat(e.target.value) })} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="heures">Heures *</Label>
-                <Input
-                  id="heures"
-                  type="number"
-                  min="0"
-                  value={formData.heures}
-                  onChange={(e) => setFormData({ ...formData, heures: parseInt(e.target.value) })}
-                  required
-                />
+                <Label htmlFor="heures-cm">Heures CM</Label>
+                <Input id="heures-cm" type="number" min="0" value={formData.heures_cm} onChange={(e) => setFormData({ ...formData, heures_cm: parseInt(e.target.value) })} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="heures-td">Heures TD</Label>
+                <Input id="heures-td" type="number" min="0" value={formData.heures_td} onChange={(e) => setFormData({ ...formData, heures_td: parseInt(e.target.value) })} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="heures-tp">Heures TP</Label>
+                <Input id="heures-tp" type="number" min="0" value={formData.heures_tp} onChange={(e) => setFormData({ ...formData, heures_tp: parseInt(e.target.value) })} />
               </div>
             </div>
 
@@ -215,49 +217,21 @@ export function MatiereDialog({ open, onOpenChange, onSave, matiere, fixedType, 
                     <SelectValue placeholder="Sélectionner" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Informatique">Informatique</SelectItem>
-                    <SelectItem value="Gestion">Gestion</SelectItem>
-                    <SelectItem value="Commerce">Commerce</SelectItem>
-                    <SelectItem value="Marketing">Marketing</SelectItem>
+                    {filieres.map((filiere) => (
+                      <SelectItem key={filiere.id} value={filiere.nom}>
+                        {filiere.nom}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="niveau">Niveau *</Label>
-                <Select
-                  value={formData.niveau}
-                  onValueChange={(value) => setFormData({ ...formData, niveau: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="L1">L1</SelectItem>
-                    <SelectItem value="L2">L2</SelectItem>
-                    <SelectItem value="L3">L3</SelectItem>
-                    <SelectItem value="M1">M1</SelectItem>
-                    <SelectItem value="M2">M2</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Input id="niveau" value={formData.niveau || ""} onChange={(e) => setFormData({ ...formData, niveau: e.target.value })} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="semestre">Semestre *</Label>
-                <Select
-                  value={formData.semestre}
-                  onValueChange={(value) => setFormData({ ...formData, semestre: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="S1">S1</SelectItem>
-                    <SelectItem value="S2">S2</SelectItem>
-                    <SelectItem value="S3">S3</SelectItem>
-                    <SelectItem value="S4">S4</SelectItem>
-                    <SelectItem value="S5">S5</SelectItem>
-                    <SelectItem value="S6">S6</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Input id="semestre" value={formData.semestre || ""} onChange={(e) => setFormData({ ...formData, semestre: e.target.value })} required />
               </div>
             </div>
 

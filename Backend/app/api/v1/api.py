@@ -3,7 +3,7 @@ Agrégation des routeurs de l'API v1.
 """
 
 from fastapi import APIRouter
-from app.api.v1.endpoints import setup, auth, sessions, structure, etudiants, pedagogie, finances
+from app.api.v1.endpoints import setup, auth, sessions, structure, etudiants, pedagogie, finances, users, portals, admissions, admission_views, context
 
 api_router = APIRouter()
 
@@ -14,4 +14,9 @@ api_router.include_router(structure.router, prefix="/structure", tags=["Structur
 api_router.include_router(etudiants.router, prefix="/etudiants", tags=["Étudiants"])
 api_router.include_router(pedagogie.router, prefix="/pedagogie", tags=["Pédagogie & Notes"])
 api_router.include_router(finances.router, prefix="/finances", tags=["Finances & Encaissements"])
+api_router.include_router(users.router, prefix="/users", tags=["Administration des utilisateurs"])
+api_router.include_router(portals.router, prefix="/portail", tags=["Portails auto-service"])
+api_router.include_router(admissions.router, prefix="/admissions", tags=["Admissions"])
+api_router.include_router(admission_views.router, prefix="/admissions", tags=["Vues d'admissions"])
+api_router.include_router(context.router, prefix="/context", tags=["Contexte académique"])
 

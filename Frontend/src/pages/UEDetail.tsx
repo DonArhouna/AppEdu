@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,32 +8,36 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ArrowLeft, BookOpen, Clock, Users, GraduationCap, AlertCircle, RefreshCw } from "lucide-react";
 import { structureApi, extractErrorMessage } from "@/services/apiClient";
+import type { Matiere, TeachingUnit } from "@/services/apiTypes";
 
 const UEDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const [ue, setUe] = useState<any | null>(null);
+  const [ue, setUe] = useState<TeachingUnit | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchUE = async () => {
+  const fetchUE = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await structureApi.getUEById(id);
-      setUe(data);
-    } catch (err: any) {
+      const result = await structureApi.getUEById(id);
+      if (result.error || !result.data) {
+        throw new Error(result.error || "Unité d'enseignement introuvable.");
+      }
+      setUe(result.data);
+    } catch (err: unknown) {
       setError(extractErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchUE();
-  }, [id]);
+    void fetchUE();
+  }, [fetchUE]);
 
   if (loading) {
     return (
@@ -77,10 +81,10 @@ const UEDetail = () => {
   }
 
   const matieres = Array.isArray(ue.matieres) ? ue.matieres : [];
-  const heuresCM = matieres.reduce((acc: number, m: any) => acc + (Number(m.heures_cm) || 0), 0);
-  const heuresTD = matieres.reduce((acc: number, m: any) => acc + (Number(m.heures_td) || 0), 0);
-  const heuresTP = matieres.reduce((acc: number, m: any) => acc + (Number(m.heures_tp) || 0), 0);
-  const heuresTotal = Number(ue.heures) || (heuresCM + heuresTD + heuresTP) || 45;
+  const heuresCM = matieres.reduce((acc: number, m: Matiere) => acc + (Number(m.heures_cm) || 0), 0);
+  const heuresTD = matieres.reduce((acc: number, m: Matiere) => acc + (Number(m.heures_td) || 0), 0);
+  const heuresTP = matieres.reduce((acc: number, m: Matiere) => acc + (Number(m.heures_tp) || 0), 0);
+  const heuresTotal = Number(ue.heures) || heuresCM + heuresTD + heuresTP;
 
   return (
     <div className="space-y-6">
@@ -96,7 +100,7 @@ const UEDetail = () => {
               <Badge variant="outline">{ue.code}</Badge>
             </div>
             <p className="text-muted-foreground">
-              {ue.niveau || "Licence"} - {ue.semestre || "S1"}
+              {ue.niveau || "Non renseigné"} - {ue.semestre || "Non renseigné"}
             </p>
           </div>
         </div>
@@ -110,8 +114,8 @@ const UEDetail = () => {
             <GraduationCap className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">{ue.credits ?? 6} ECTS</div>
-            <p className="text-xs text-muted-foreground mt-1">Coefficient: {ue.coefficient ?? 3}</p>
+            <div className="text-2xl font-bold text-foreground">{ue.credits} ECTS</div>
+            <p className="text-xs text-muted-foreground mt-1">Coefficient: {ue.coefficient}</p>
           </CardContent>
         </Card>
 
@@ -168,7 +172,7 @@ const UEDetail = () => {
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {matieres.map((matiere: any) => (
+                  {matieres.map((matiere) => (
                     <div
                       key={matiere.id}
                       className="flex items-center justify-between rounded-lg border border-border p-4 bg-background hover:bg-muted/30 transition-colors"
@@ -181,7 +185,7 @@ const UEDetail = () => {
                           </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Crédits: {matiere.credits || 3} | Coefficient: {matiere.coefficient || 1.5} | 
+                          Crédits: {matiere.credits} | Coefficient: {matiere.coefficient} |
                           CM: {matiere.heures_cm || 0}h, TD: {matiere.heures_td || 0}h, TP: {matiere.heures_tp || 0}h
                         </p>
                       </div>

@@ -1,9 +1,10 @@
 """
 EduManagePro (EMP) — Backend API Application
-FastAPI + SQLAlchemy 2.0 Async + PostgreSQL / Multi-Tenant Ready
+FastAPI + SQLAlchemy 2.0 Async + PostgreSQL / Standalone Ready
 """
 
 from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -13,28 +14,31 @@ from app.core.database import async_session_factory
 from app.api.v1.api import api_router
 
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Gestionnaire de cycle de vie de l'application :
     Exécuté au démarrage et à l'arrêt du serveur.
     """
-    print(f"🚀 Démarrage de {settings.PROJECT_NAME} v{settings.VERSION} [{settings.ENVIRONMENT}]")
-    print(f"⚙️  Mode Tenant : {settings.TENANT_MODE}")
-    print(f"🔗 Base de données cible : {settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME if hasattr(settings, 'DB_NAME') else 'edumanagepro'}")
+    logger.info("Demarrage de %s v%s [%s]", settings.PROJECT_NAME, settings.VERSION, settings.ENVIRONMENT)
+    logger.info("Mode tenant : %s", settings.TENANT_MODE)
+    logger.info("Base de donnees cible : %s:%s", settings.DB_HOST, settings.DB_PORT)
     
     # Test préliminaire de connectivité DB (non bloquant au boot pour laisser le wizard accessible)
     try:
         async with async_session_factory() as session:
             await session.execute(text("SELECT 1"))
-        print("✅ Connexion à la base de données établie avec succès.")
+        logger.info("Connexion a la base de donnees etablie avec succes.")
     except Exception as e:
-        print(f"⚠️  Attention : Base de données non connectée ou en attente d'initialisation : {e}")
-        print("👉 Le Setup Wizard (/setup) reste accessible pour la configuration initiale.")
+        logger.warning("Base de donnees non connectee ou en attente d'initialisation : %s", e)
+        logger.info("Le Setup Wizard (/setup) reste accessible pour la configuration initiale.")
 
     yield
 
-    print("🛑 Arrêt du serveur EduManagePro.")
+    logger.info("Arret du serveur EduManagePro.")
 
 
 app = FastAPI(
@@ -43,46 +47,43 @@ app = FastAPI(
     description=(
         "API Backend d'EduManagePro (EMP) — Système de gestion scolaire et universitaire.\n\n"
         "Fonctionnalités clés :\n"
-        "- Architecture Hybride Standalone / Multi-Tenant\n"
+        "- Architecture Standalone prête pour une évolution multi-tenant\n"
         "- Assistant de configuration initiale Web (/api/v1/setup)\n"
         "- Gestion des sessions académiques et tranches d'échéances\n"
         "- Sécurité JWT avec contrôle d'accès basé sur les rôles (RBAC)"
     ),
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if settings.ENVIRONMENT.lower() == "production" else "/docs",
+    redoc_url=None if settings.ENVIRONMENT.lower() == "production" else "/redoc",
     lifespan=lifespan,
 )
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
-import traceback
-
 # Configuration CORS pour le frontend (React / Vite)
 origins = [str(o).strip() for o in settings.BACKEND_CORS_ORIGINS if o]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if origins else ["*"],
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origins=origins,
+    allow_origin_regex=(
+        r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+        if settings.ENVIRONMENT.lower() == "development"
+        else None
+    ),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Garantit que même en cas d'erreur interne 500, les en-têtes CORS sont préservés."""
-    traceback.print_exc()
-    origin = request.headers.get("origin", "*")
-    response = JSONResponse(
+    """Journalise l'erreur sans exposer de détails internes au client."""
+    logger.exception("Erreur non gérée sur %s %s", request.method, request.url.path)
+    return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": f"Erreur interne du serveur: {str(exc)}"},
+        content={"detail": "Une erreur interne est survenue."},
     )
-    if origin:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-    return response
 
 
 
@@ -92,7 +93,7 @@ async def root():
         "app": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "status": "online",
-        "docs": "/docs",
+        "docs": "/docs" if settings.ENVIRONMENT.lower() != "production" else None,
         "mode": settings.TENANT_MODE,
         "api_v1": settings.API_V1_STR,
     }
@@ -107,8 +108,8 @@ async def health_check():
         async with async_session_factory() as session:
             await session.execute(text("SELECT 1"))
         db_ok = True
-    except Exception as e:
-        details = f"Base de données inaccessible: {str(e)}"
+    except Exception:
+        details = "Base de données inaccessible."
 
     return {
         "status": "healthy" if db_ok else "degraded",

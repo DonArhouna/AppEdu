@@ -48,6 +48,7 @@ def test_structure_models_and_schemas():
         code="UE-INF301",
         credits=6,
         coefficient=3.0,
+        heures=45,
         semestre="S5",
         niveau="Licence 3",
         filiere_id="GL",
@@ -94,6 +95,27 @@ def test_etudiant_models_and_matricule():
         session_id="SES-2025-MAIN",
     )
     print("  [OK] Étudiant créé avec session:", etu_in.prenom, etu_in.nom, f"[{etu_in.matricule}]")
+
+    # Une suppression peut créer un trou dans la séquence. Le générateur doit
+    # retourner le premier numéro réellement disponible, pas count + 1.
+    class _MatriculeResult:
+        def scalars(self):
+            return self
+
+        def all(self):
+            return ["2026-GL-0001", "2026-GL-0003"]
+
+    class _MatriculeSession:
+        async def execute(self, _statement):
+            return _MatriculeResult()
+
+    from app.services.matricule_service import generate_matricule
+
+    generated = asyncio.run(
+        generate_matricule(_MatriculeSession(), filiere_code="GL", annee=2026)
+    )
+    assert generated == "2026-GL-0002", f"Séquence matricule invalide: {generated}"
+    print("  [OK] Trou de séquence détecté, prochain matricule:", generated)
 
     # Test inscription
     insc_in = EtudiantInscriptionRequest(

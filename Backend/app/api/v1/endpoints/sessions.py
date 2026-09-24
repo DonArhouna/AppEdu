@@ -12,11 +12,12 @@ from typing import List
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_db, require_admin
+from app.api.deps import get_db, require_admin, require_staff
 from app.models.session_academique import SessionAcademique, PeriodePaiement
+from app.models.etudiant import Etudiant
 from app.schemas.session import (
     SessionAcademiqueCreate,
     SessionAcademiqueUpdate,
@@ -29,7 +30,8 @@ router = APIRouter()
 
 @router.get("/", response_model=List[SessionAcademiqueResponse], summary="Lister toutes les sessions académiques")
 async def list_sessions(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(require_staff),
 ):
     """Retourne la liste de toutes les sessions académiques avec leurs périodes ordonnées."""
     stmt = (
@@ -44,7 +46,8 @@ async def list_sessions(
 
 @router.get("/active", response_model=SessionAcademiqueResponse, summary="Obtenir la session active")
 async def get_active_session(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(require_staff),
 ):
     """Retourne la session académique actuellement active avec son calendrier de paiement."""
     stmt = (
@@ -57,17 +60,6 @@ async def get_active_session(
     session = result.scalar_one_or_none()
 
     if not session:
-        # Fallback vers la plus récente si aucune marquée explicitement "active"
-        stmt_fallback = (
-            select(SessionAcademique)
-            .options(selectinload(SessionAcademique.periodes))
-            .order_by(SessionAcademique.date_debut.desc())
-            .limit(1)
-        )
-        res_fb = await db.execute(stmt_fallback)
-        session = res_fb.scalar_one_or_none()
-
-    if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Aucune session académique active n'a été trouvée."
@@ -78,7 +70,8 @@ async def get_active_session(
 @router.get("/{session_id}", response_model=SessionAcademiqueResponse, summary="Détail d'une session")
 async def get_session_by_id(
     session_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(require_staff),
 ):
     """Retourne une session académique spécifique par son identifiant."""
     stmt = (
@@ -100,7 +93,8 @@ async def get_session_by_id(
 @router.get("/{session_id}/periodes", response_model=List[PeriodePaiementResponse], summary="Périodes de paiement d'une session")
 async def get_session_periods(
     session_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(require_staff),
 ):
     """Retourne les périodes de paiement rattachées à la session."""
     stmt = (
@@ -130,6 +124,12 @@ async def create_session(
         )
 
     session_id = payload.id or f"session-{payload.code.lower().replace(' ', '-')}"
+    if payload.date_fin < payload.date_debut:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La date de fin doit être postérieure à la date de début.",
+        )
+
     new_session = SessionAcademique(
         id=session_id,
         nom=payload.nom,
@@ -166,3 +166,99 @@ async def create_session(
     )
     res = await db.execute(stmt)
     return res.scalar_one()
+
+
+@router.put("/{session_id}", response_model=SessionAcademiqueResponse, summary="Modifier une session académique")
+async def update_session(
+    session_id: str,
+    payload: SessionAcademiqueUpdate,
+    db: AsyncSession = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    session = await db.get(SessionAcademique, session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session académique introuvable.",
+        )
+
+    data = payload.model_dump(exclude_unset=True)
+    new_start = data.get("date_debut", session.date_debut)
+    new_end = data.get("date_fin", session.date_fin)
+    if new_end < new_start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La date de fin doit être postérieure à la date de début.",
+        )
+
+    if data.get("code") and data["code"] != session.code:
+        duplicate = await db.execute(
+            select(SessionAcademique.id).where(
+                SessionAcademique.code == data["code"],
+                SessionAcademique.id != session_id,
+            )
+        )
+        if duplicate.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ce code de session est déjà utilisé.",
+            )
+
+    periodes_data = data.pop("periodes", None)
+    for field, value in data.items():
+        setattr(session, field, value)
+
+    if periodes_data is not None:
+        await db.execute(
+            delete(PeriodePaiement).where(PeriodePaiement.session_id == session_id)
+        )
+        for index, period in enumerate(periodes_data, start=1):
+            db.add(
+                PeriodePaiement(
+                    id=period.get("id") or str(uuid.uuid4()),
+                    session_id=session_id,
+                    nom=period["nom"],
+                    mois=period["mois"],
+                    date_echeance=period.get("date_echeance"),
+                    montant_estime=period.get("montant_estime"),
+                    pourcentage=period.get("pourcentage"),
+                    ordre=period.get("ordre") or index,
+                )
+            )
+
+    await db.commit()
+    db.expire(session, ["periodes"])
+
+    stmt = (
+        select(SessionAcademique)
+        .options(selectinload(SessionAcademique.periodes))
+        .where(SessionAcademique.id == session_id)
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one()
+
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Supprimer une session académique")
+async def delete_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    _admin=Depends(require_admin),
+):
+    session = await db.get(SessionAcademique, session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session académique introuvable.",
+        )
+
+    attached_student = await db.execute(
+        select(Etudiant.id).where(Etudiant.session_id == session_id).limit(1)
+    )
+    if attached_student.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Des étudiants sont encore rattachés à cette session.",
+        )
+
+    await db.delete(session)
+    await db.commit()

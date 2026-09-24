@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,21 +22,23 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { StudentCardModal } from "@/components/students/StudentCardModal";
-import { etudiantsApi, financesApi, pedagogieApi, sessionsApi } from "@/services/apiClient";
+import { etudiantsApi, financesApi, pedagogieApi, sessionsApi, setupApi } from "@/services/apiClient";
+import type { AcademicSession, Note, Payment, Student } from "@/services/apiTypes";
 
 const StudentDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [cardModalOpen, setCardModalOpen] = useState(false);
 
-  const [student, setStudent] = useState<any>(null);
-  const [session, setSession] = useState<any>(null);
-  const [paiements, setPaiements] = useState<any[]>([]);
-  const [notes, setNotes] = useState<any[]>([]);
+  const [student, setStudent] = useState<Student | null>(null);
+  const [session, setSession] = useState<AcademicSession | null>(null);
+  const [paiements, setPaiements] = useState<Payment[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState("");
 
-  const loadStudentData = async () => {
+  const loadStudentData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
@@ -52,6 +54,8 @@ const StudentDetail = () => {
         setStudent(null);
       } else {
         const s = stuRes.data;
+        const statusResult = await setupApi.getStatus();
+        setCurrency(statusResult.data?.devise || "");
         setStudent(s);
         if (s?.session_id) {
           const sesRes = await sessionsApi.getById(s.session_id);
@@ -65,19 +69,19 @@ const StudentDetail = () => {
       if (notesRes.data) {
         setNotes(notesRes.data);
       }
-    } catch (err: any) {
-      setError(err?.message || "Impossible de charger le dossier étudiant.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Impossible de charger le dossier étudiant.");
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadStudentData();
   }, [id]);
 
+  useEffect(() => {
+    void loadStudentData();
+  }, [loadStudentData]);
+
   const handleGenerateCertificate = () => {
-    toast.success("Certificat de scolarité généré au format PDF officiel.");
+    toast.info("La génération de certificats sera disponible après l'ajout du endpoint documentaire.");
   };
 
   if (loading) {
@@ -121,7 +125,7 @@ const StudentDetail = () => {
                 {student.prenom} {student.nom}
               </h1>
               <Badge className={student.statut === "actif" ? "bg-emerald-600 text-white" : "bg-amber-600 text-white"}>
-                {student.statut || "Actif"}
+                {student.statut || "Non renseigné"}
               </Badge>
             </div>
             <p className="text-muted-foreground text-sm font-mono">
@@ -172,7 +176,7 @@ const StudentDetail = () => {
               </div>
               <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 text-muted-foreground" />
-                <span>Lieu: {student.lieu_naissance || "Abidjan"}</span>
+                <span>Lieu: {student.lieu_naissance || "Non renseigné"}</span>
               </div>
             </div>
           </CardContent>
@@ -194,15 +198,15 @@ const StudentDetail = () => {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Niveau</p>
-                  <p className="font-semibold">{student.niveau || "Licence 1"}</p>
+                  <p className="font-semibold">{student.niveau || "Non renseigné"}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Session Académique</p>
-                  <p className="font-semibold">{session?.nom || "Session par défaut (2025-2026)"}</p>
+                  <p className="font-semibold">{session?.nom || "Non rattachée"}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Crédits ECTS Validés</p>
-                  <p className="font-semibold text-primary">{student.credits_valides || 0} / 60 ECTS</p>
+                  <p className="font-semibold text-primary">{student.credits_valides !== undefined ? student.credits_valides : "Non calculé"}</p>
                 </div>
               </div>
             </CardContent>
@@ -223,7 +227,7 @@ const StudentDetail = () => {
                   {paiements.map((p) => (
                     <div key={p.id} className="p-3 border rounded-xl flex items-center justify-between text-xs">
                       <div>
-                        <p className="font-semibold text-foreground">{Number(p.montant).toLocaleString("fr-FR")} FCFA</p>
+                        <p className="font-semibold text-foreground">{Number(p.montant).toLocaleString("fr-FR")} {currency || "devise de l'établissement"}</p>
                         <p className="text-muted-foreground">Mode: {p.mode_paiement} • Réf: {p.reference}</p>
                       </div>
                       <Badge className="bg-emerald-600 text-white">{p.statut || "Validé"}</Badge>
@@ -259,20 +263,17 @@ const StudentDetail = () => {
         open={cardModalOpen}
         onOpenChange={setCardModalOpen}
         student={{
-          id: student.id,
           matricule: student.matricule,
           nom: student.nom,
           prenom: student.prenom,
           filiere: student.filiere || "",
           niveau: student.niveau || "",
-          cycle: student.niveau?.startsWith("Master") ? "Master" : "Licence",
-          promotion: "2025-2026",
-          statut: student.statut || "actif",
-          email: student.email,
+          email: student.email || "",
           telephone: student.telephone || "",
-          dateNaissance: student.date_naissance || "",
-          lieuNaissance: student.lieu_naissance || "",
         }}
+        sessionLabel={session?.annee_academique}
+        status={student.statut}
+        validUntil={session?.date_fin}
       />
     </div>
   );

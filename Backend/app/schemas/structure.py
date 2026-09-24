@@ -18,18 +18,18 @@ from pydantic import BaseModel, ConfigDict, Field
 class MatiereBase(BaseModel):
     nom: str = Field(..., example="Base de données relationnelles")
     code: str = Field(..., example="INF201")
-    credits: int = Field(3, example=3)
-    coefficient: float = Field(1.5, example=1.5)
-    heures_cm: int = Field(20, example=20)
-    heures_td: int = Field(15, example=15)
-    heures_tp: int = Field(10, example=10)
+    credits: int = Field(..., ge=0)
+    coefficient: float = Field(..., ge=0)
+    heures_cm: int = Field(..., ge=0)
+    heures_td: int = Field(..., ge=0)
+    heures_tp: int = Field(..., ge=0)
     enseignant_nom: Optional[str] = Field(None, example="Dr. Diallo")
     description: Optional[str] = None
 
 
 class MatiereCreate(MatiereBase):
     id: Optional[str] = None
-    ue_id: Optional[str] = None
+    ue_id: str
 
 
 class MatiereUpdate(BaseModel):
@@ -60,17 +60,17 @@ class MatiereResponse(MatiereBase):
 class UEBase(BaseModel):
     nom: str = Field(..., example="Systèmes d'Information & Génie Logiciel")
     code: str = Field(..., example="UE-INF301")
-    credits: int = Field(6, example=6)
-    coefficient: float = Field(3.0, example=3.0)
-    heures: int = Field(45, example=45)
-    semestre: str = Field("S1", example="S1")
-    niveau: str = Field("Licence 3", example="Licence 3")
+    credits: int = Field(..., ge=0)
+    coefficient: float = Field(..., ge=0)
+    heures: int = Field(..., ge=0)
+    semestre: str
+    niveau: str
     responsable: Optional[str] = Field(None, example="Prof. Koné")
 
 
 class UECreate(UEBase):
     id: Optional[str] = None
-    filiere_id: Optional[str] = None
+    filiere_id: str
     matieres: Optional[List[MatiereCreate]] = None
 
 
@@ -89,7 +89,7 @@ class UEUpdate(BaseModel):
 class UEResponse(UEBase):
     id: str
     filiere_id: Optional[str] = None
-    matieres: List[MatiereResponse] = []
+    matieres: List[MatiereResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -103,8 +103,8 @@ class FiliereBase(BaseModel):
     nom: str = Field(..., example="Génie Logiciel")
     code: str = Field(..., example="GL")
     description: Optional[str] = None
-    diplome: str = Field("Licence", example="Licence")
-    duree: int = Field(3, example=3)
+    diplome: str
+    duree: int = Field(..., ge=1)
 
 
 class FiliereCreate(FiliereBase):
@@ -156,7 +156,7 @@ class DepartementUpdate(BaseModel):
 class DepartementResponse(DepartementBase):
     id: str
     campus_id: Optional[str] = None
-    filieres: List[FiliereResponse] = []
+    filieres: List[FiliereResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -194,7 +194,7 @@ class CampusUpdate(BaseModel):
 
 class CampusResponse(CampusBase):
     id: str
-    departements: List[DepartementResponse] = []
+    departements: List[DepartementResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

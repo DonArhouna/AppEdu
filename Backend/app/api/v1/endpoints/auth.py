@@ -12,10 +12,10 @@ from sqlalchemy import select
 
 from app.api.deps import get_db, get_current_active_user
 from app.core.config import settings
-from app.core.security import verify_password, create_access_token
+from app.core.security import verify_password, create_access_token, get_password_hash
 from app.models.utilisateur import Utilisateur
 from app.schemas.auth import LoginRequest, TokenResponse
-from app.schemas.user import UserResponse
+from app.schemas.user import CurrentProfileUpdate, PasswordChange, UserResponse
 
 router = APIRouter()
 
@@ -72,3 +72,31 @@ async def get_current_user_profile(
 ):
     """Retourne les informations du profil de l'utilisateur actuellement authentifié."""
     return UserResponse.model_validate(current_user)
+
+
+@router.patch("/me", response_model=UserResponse, summary="Modifier son profil")
+async def update_current_user_profile(
+    payload: CurrentProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Utilisateur = Depends(get_current_active_user),
+):
+    data = payload.model_dump(exclude_unset=True)
+    for field, value in data.items():
+        if isinstance(value, str):
+            value = value.strip()
+        setattr(current_user, field, value or None)
+    await db.commit()
+    await db.refresh(current_user)
+    return UserResponse.model_validate(current_user)
+
+
+@router.post("/me/password", status_code=status.HTTP_204_NO_CONTENT, summary="Modifier son mot de passe")
+async def change_current_password(
+    payload: PasswordChange,
+    db: AsyncSession = Depends(get_db),
+    current_user: Utilisateur = Depends(get_current_active_user),
+):
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mot de passe actuel incorrect.")
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    await db.commit()

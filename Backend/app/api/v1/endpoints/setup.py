@@ -4,7 +4,7 @@ Setup Wizard Endpoints :
 - POST /initialize : Initialise l'établissement, l'administrateur et les paramètres initiaux
 """
 
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,12 +12,9 @@ from sqlalchemy import select, text
 
 from app.api.deps import get_db
 from app.core.config import settings
-from app.core.database import get_engine_for_tenant
 from app.core.security import get_password_hash, create_access_token
-from app.models.base import Base
 from app.models.etablissement import Etablissement
 from app.models.utilisateur import Utilisateur, UserRole
-from app.models.session_academique import SessionAcademique, PeriodePaiement
 import app.models.structure
 import app.models.pedagogie
 import app.models.etudiant
@@ -34,17 +31,15 @@ async def get_setup_status(db: AsyncSession = Depends(get_db)):
     Retourne le statut d'initialisation du système.
     Permet au frontend de savoir s'il faut rediriger l'utilisateur vers /setup ou vers /login.
     """
-    db_connected = False
     try:
         await db.execute(text("SELECT 1"))
-        db_connected = True
-    except Exception as e:
+    except Exception:
         return SetupStatusResponse(
             is_configured=False,
             version=settings.VERSION,
             tenant_mode=settings.TENANT_MODE,
             database_connected=False,
-            details=f"Impossible de se connecter à la base de données: {str(e)}"
+            details="Impossible de se connecter à la base de données."
         )
 
     # Vérification de l'existence d'un établissement configuré
@@ -58,17 +53,18 @@ async def get_setup_status(db: AsyncSession = Depends(get_db)):
                 is_configured=True,
                 etablissement_nom=etablissement.nom,
                 etablissement_code=etablissement.code,
+                devise=etablissement.devise,
                 version=settings.VERSION,
                 tenant_mode=settings.TENANT_MODE,
                 database_connected=True,
             )
-    except Exception as e:
+    except Exception:
         return SetupStatusResponse(
             is_configured=False,
             version=settings.VERSION,
             tenant_mode=settings.TENANT_MODE,
             database_connected=True,
-            details=f"Tables non initialisées: {str(e)}"
+            details="Le schéma de la base de données n'est pas initialisé."
         )
 
     return SetupStatusResponse(
@@ -89,8 +85,8 @@ async def initialize_system(
     Exécute le premier paramétrage de l'établissement :
     1. Création ou mise à jour de l'Etablissement (nom, code, devise, licence)
     2. Création du compte Administrateur initial (SuperUser)
-    3. Optionnel : Création d'une session académique par défaut avec périodes de paiement
-    4. Génération immédiate d'un JWT d'accès pour connexion automatique.
+    3. Génération d'un JWT d'accès à titre de confirmation technique.
+    Les données métier sont ensuite saisies progressivement via les modules API.
     """
     # 1. Vérifier si déjà configuré
     try:
@@ -104,26 +100,23 @@ async def initialize_system(
             )
     except HTTPException:
         raise
-    except Exception:
-        pass
-
-    # S'assurer que les tables sont créées dans la base cible
-    try:
-        engine = get_engine_for_tenant("default")
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-    except Exception as e:
-        print(f"Notice: Table initialization sync: {e}")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Le schéma de la base de données n'est pas initialisé. Exécutez les migrations Alembic.",
+        ) from exc
 
     # 2. Créer l'établissement
     etablissement = Etablissement(
+        id=str(uuid.uuid4()),
         nom=payload.etablissement.nom,
-        sigle=payload.etablissement.code or "EMP",
+        sigle=payload.etablissement.code,
         adresse=payload.etablissement.adresse,
         telephone=payload.etablissement.telephone or "",
-        email=str(payload.etablissement.email) if payload.etablissement.email else "contact@emp.com",
-        devise=payload.etablissement.devise or "FCFA",
+        email=str(payload.etablissement.email),
+        devise=payload.etablissement.devise,
         licence_cle=payload.etablissement.license_key,
+        licence_statut="pending_validation" if payload.etablissement.license_key else "active",
         is_configured=True,
         date_configuration=datetime.now(timezone.utc),
     )
@@ -143,47 +136,6 @@ async def initialize_system(
     )
     db.add(admin_user)
     await db.flush()  # Pour récupérer l'id autogénéré
-
-    # 4. Créer la session académique par défaut si demandé
-    if payload.init_default_academic_session:
-        session_id = "session-2025-2026"
-        session_defaut = SessionAcademique(
-            id=session_id,
-            nom="Année Académique 2025-2026",
-            code="2025-2026",
-            annee_academique="2025-2026",
-            date_debut=date(2025, 10, 1),
-            date_fin=date(2026, 7, 31),
-            statut="active",
-            description="Session académique initiale générée lors de la configuration."
-        )
-        db.add(session_defaut)
-
-        # 10 périodes mensuelles d'octobre à juillet
-        mois_periodes = [
-            ("Tranche 1 - Octobre", "Octobre", date(2025, 10, 15), 1),
-            ("Tranche 2 - Novembre", "Novembre", date(2025, 11, 15), 2),
-            ("Tranche 3 - Décembre", "Décembre", date(2025, 12, 15), 3),
-            ("Tranche 4 - Janvier", "Janvier", date(2026, 1, 15), 4),
-            ("Tranche 5 - Février", "Février", date(2026, 2, 15), 5),
-            ("Tranche 6 - Mars", "Mars", date(2026, 3, 15), 6),
-            ("Tranche 7 - Avril", "Avril", date(2026, 4, 15), 7),
-            ("Tranche 8 - Mai", "Mai", date(2026, 5, 15), 8),
-            ("Tranche 9 - Juin", "Juin", date(2026, 6, 15), 9),
-            ("Tranche 10 - Juillet", "Juillet", date(2026, 7, 15), 10),
-        ]
-
-        for nom_p, mois_p, echeance, ordre in mois_periodes:
-            p = PeriodePaiement(
-                id=str(uuid.uuid4()),
-                session_id=session_id,
-                nom=nom_p,
-                mois=mois_p,
-                date_echeance=echeance,
-                montant_estime=60000.0,
-                ordre=ordre
-            )
-            db.add(p)
 
     await db.commit()
     await db.refresh(admin_user)

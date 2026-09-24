@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,34 +19,41 @@ import {
   Clock,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { financesApi, extractErrorMessage } from "@/services/apiClient";
+import { financesApi, extractErrorMessage, setupApi } from "@/services/apiClient";
+import type { Payment } from "@/services/apiTypes";
 
 const PaiementDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [paiement, setPaiement] = useState<any | null>(null);
+  const [paiement, setPaiement] = useState<Payment | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState("");
 
-  const fetchPaiement = async () => {
+  const fetchPaiement = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await financesApi.getPaiementById(id);
-      setPaiement(data);
-    } catch (err: any) {
+      const result = await financesApi.getPaiementById(id);
+      if (result.error || !result.data) {
+        throw new Error(result.error || "Paiement introuvable.");
+      }
+      const statusResult = await setupApi.getStatus();
+      setCurrency(statusResult.data?.devise || "");
+      setPaiement(result.data);
+    } catch (err: unknown) {
       setError(extractErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchPaiement();
-  }, [id]);
+    void fetchPaiement();
+  }, [fetchPaiement]);
 
   const getStatutBadge = (statut: string) => {
     const s = statut?.toLowerCase();
@@ -162,7 +169,7 @@ const PaiementDetail = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-              {montant.toLocaleString("fr-FR")} FCFA
+              {montant.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
             </div>
           </CardContent>
         </Card>
@@ -188,7 +195,7 @@ const PaiementDetail = () => {
           </CardHeader>
           <CardContent>
             <div className="text-xl font-bold text-foreground">
-              {paiement.mode_paiement || "Espèces"}
+              {paiement.mode_paiement || "Non renseigné"}
             </div>
           </CardContent>
         </Card>
@@ -200,7 +207,7 @@ const PaiementDetail = () => {
           </CardHeader>
           <CardContent>
             <div className="text-xl font-bold capitalize text-foreground">
-              {paiement.statut || "Validé"}
+              {paiement.statut || "Non renseigné"}
             </div>
           </CardContent>
         </Card>
@@ -265,14 +272,14 @@ const PaiementDetail = () => {
               <div className="rounded-lg border border-border p-3">
                 <p className="text-xs text-muted-foreground">Numéro de Facture</p>
                 <p className="font-semibold text-foreground">
-                  {paiement.facture?.numero_facture || paiement.facture_id || "Facture standard"}
+                  {paiement.facture?.numero_facture || paiement.facture_id || "Non renseignée"}
                 </p>
               </div>
               <div className="rounded-lg border border-border p-3">
                 <p className="text-xs text-muted-foreground">Montant Total Facture</p>
                 <p className="font-semibold text-foreground">
                   {paiement.facture?.montant_total
-                    ? `${Number(paiement.facture.montant_total).toLocaleString("fr-FR")} FCFA`
+                    ? `${Number(paiement.facture.montant_total).toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`
                     : "Non spécifié"}
                 </p>
               </div>
@@ -306,7 +313,7 @@ const PaiementDetail = () => {
             </div>
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs text-muted-foreground">Opérateur / Caisse</p>
-              <p className="font-semibold text-foreground">Caisse Centrale IMIA</p>
+              <p className="font-semibold text-foreground">{paiement.encaisse_par_id || "Compte authentifié"}</p>
             </div>
           </div>
         </CardContent>

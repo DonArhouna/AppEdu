@@ -40,6 +40,17 @@ from app.schemas.finance import (
     PaiementCreate, PaiementResponse,
     RecuResponse, BalanceAgeeItem, BalanceAgeeResponse,
 )
+from app.schemas.portals import PortalEtudiantResponse, PortalEnseignantResponse
+from app.schemas.admissions import (
+    StatutCandidature, StatutPiece, TypeDecision,
+    CandidatureCreate, CandidatureUpdate, CandidatureResponse, CandidaturePage,
+    CandidatureStatusUpdate, CandidatureConversionResponse,
+    PieceCandidatureCreate, PieceCandidatureUpdate, PieceCandidatureResponse,
+    DecisionAdmissionCreate, DecisionAdmissionResponse,
+    VueAdmissionsFiltres, VueAdmissionsCreate, VueAdmissionsUpdate, VueAdmissionsResponse,
+    ActionGroupee, BulkCandidatureAction, BulkActionError, BulkCandidatureActionResponse,
+)
+from app.schemas.context import AcademicContextUpdate, AcademicContextResponse
 
 __all__ = [
     "UserBase", "UserCreate", "UserUpdate", "UserResponse",
@@ -63,4 +74,13 @@ __all__ = [
     "FactureBase", "FactureCreate", "FactureResponse",
     "PaiementCreate", "PaiementResponse",
     "RecuResponse", "BalanceAgeeItem", "BalanceAgeeResponse",
+    "PortalEtudiantResponse", "PortalEnseignantResponse",
+    "StatutCandidature", "StatutPiece", "TypeDecision",
+    "CandidatureCreate", "CandidatureUpdate", "CandidatureResponse", "CandidaturePage",
+    "CandidatureStatusUpdate", "CandidatureConversionResponse",
+    "PieceCandidatureCreate", "PieceCandidatureUpdate", "PieceCandidatureResponse",
+    "DecisionAdmissionCreate", "DecisionAdmissionResponse",
+    "VueAdmissionsFiltres", "VueAdmissionsCreate", "VueAdmissionsUpdate", "VueAdmissionsResponse",
+    "ActionGroupee", "BulkCandidatureAction", "BulkActionError", "BulkCandidatureActionResponse",
+    "AcademicContextUpdate", "AcademicContextResponse",
 ]

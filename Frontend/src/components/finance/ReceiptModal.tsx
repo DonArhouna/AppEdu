@@ -1,9 +1,9 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Printer, Download, CheckCircle2, Building2, Calendar, FileText, QrCode } from "lucide-react";
+import { Printer, CheckCircle2, Calendar, FileText, QrCode } from "lucide-react";
 
-interface ReceiptData {
+export interface ReceiptData {
   numRecu: string;
   datePaiement: string;
   etudiant: {
@@ -23,7 +23,15 @@ interface ReceiptData {
     paye: number;
     reste: number;
   };
-  caissier: string;
+  caissier?: string;
+  devise?: string;
+  sessionId?: string;
+  sessionNom?: string;
+  etablissement?: {
+    nom?: string;
+    code?: string;
+    devise?: string;
+  };
 }
 
 interface ReceiptModalProps {
@@ -47,12 +55,11 @@ export const ReceiptModal = ({ open, onOpenChange, receiptData }: ReceiptModalPr
           <div className="flex items-start justify-between border-b pb-4">
             <div className="flex items-center gap-3">
               <div className="h-12 w-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-lg">
-                EMP
+                {receiptData.etablissement?.code || "ÉTABLISSEMENT"}
               </div>
               <div>
-                <h3 className="font-bold text-lg text-foreground">EduManagePro Higher Ed</h3>
-                <p className="text-xs text-muted-foreground">Institut Supérieur d'Enseignement Professionnel</p>
-                <p className="text-[11px] text-muted-foreground">BP 4580 - Campus Central - Tél: +225 27 20 00 00</p>
+                <h3 className="font-bold text-lg text-foreground">{receiptData.etablissement?.nom || "Établissement"}</h3>
+                <p className="text-xs text-muted-foreground">Code établissement : {receiptData.etablissement?.code || "-"}</p>
               </div>
             </div>
             <div className="text-right">
@@ -101,14 +108,14 @@ export const ReceiptModal = ({ open, onOpenChange, receiptData }: ReceiptModalPr
                       Paiement Scolarité : {receiptData.periodesPayees.join(", ")}
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      Réf: {receiptData.referencePaiement || "Guichet Caisse Central"}
+                      Réf: {receiptData.referencePaiement || "Référence non renseignée"}
                     </p>
                   </div>
                   <Badge variant="secondary" className="font-mono text-[11px]">
                     {receiptData.modePaiement}
                   </Badge>
                   <span className="font-mono font-bold text-foreground">
-                    {receiptData.montantDetail.paye.toLocaleString()} FCFA
+                    {receiptData.montantDetail.paye.toLocaleString()} {receiptData.devise || receiptData.etablissement?.devise || ""}
                   </span>
                 </div>
               </div>
@@ -119,20 +126,20 @@ export const ReceiptModal = ({ open, onOpenChange, receiptData }: ReceiptModalPr
           <div className="bg-primary/5 rounded-xl p-4 border border-primary/20 space-y-2 text-xs">
             <div className="flex justify-between text-muted-foreground">
               <span>Montant Total Configurépour la Période :</span>
-              <span className="font-mono font-semibold">{receiptData.montantDetail.total.toLocaleString()} FCFA</span>
+              <span className="font-mono font-semibold">{receiptData.montantDetail.total.toLocaleString()} {receiptData.devise || receiptData.etablissement?.devise || ""}</span>
             </div>
             <div className="flex justify-between text-emerald-600 font-bold text-sm pt-1 border-t border-primary/10">
               <span>Montant Encaissé (Ce jour) :</span>
-              <span className="font-mono">{receiptData.montantDetail.paye.toLocaleString()} FCFA</span>
+              <span className="font-mono">{receiptData.montantDetail.paye.toLocaleString()} {receiptData.devise || receiptData.etablissement?.devise || ""}</span>
             </div>
             {receiptData.montantDetail.reste > 0 ? (
               <div className="flex justify-between text-amber-600 font-semibold pt-1">
                 <span>Reste à Payer (Solde) :</span>
-                <span className="font-mono">{receiptData.montantDetail.reste.toLocaleString()} FCFA</span>
+                <span className="font-mono">{receiptData.montantDetail.reste.toLocaleString()} {receiptData.devise || receiptData.etablissement?.devise || ""}</span>
               </div>
             ) : (
               <div className="flex items-center gap-1.5 text-emerald-600 font-semibold text-[11px] pt-1">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Compte intégralement soldé pour cette période
+                <CheckCircle2 className="h-3.5 w-3.5" /> Règlement enregistré par l'API
               </div>
             )}
           </div>
@@ -142,9 +149,9 @@ export const ReceiptModal = ({ open, onOpenChange, receiptData }: ReceiptModalPr
             <div className="flex items-center gap-2">
               <QrCode className="h-12 w-12 text-muted-foreground/60" />
               <div className="text-[10px] text-muted-foreground">
-                <p className="font-semibold text-foreground">Document Authentifié</p>
-                <p>Signature numérique: SHA256-EMP-{receiptData.numRecu}</p>
-                <p>Caissier: {receiptData.caissier}</p>
+                <p className="font-semibold text-foreground">Reçu généré par le serveur</p>
+                <p>Référence interne : {receiptData.numRecu}</p>
+                {receiptData.caissier && <p>Encaissé par : {receiptData.caissier}</p>}
               </div>
             </div>
             <div className="text-center">

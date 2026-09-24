@@ -4,10 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Server,
   Building2,
@@ -17,6 +17,7 @@ import {
   ArrowRight,
   ArrowLeft,
   Loader2,
+  AlertCircle,
   AlertTriangle,
   Sparkles,
   Database,
@@ -28,6 +29,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { setupApi } from "@/services/apiClient";
+import type { SetupStatus } from "@/services/apiTypes";
 import logo from "@/assets/logo.svg";
 
 export default function SetupWizard() {
@@ -37,61 +39,58 @@ export default function SetupWizard() {
   const [checkingStatus, setCheckingStatus] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [setupCompleted, setSetupCompleted] = useState(false);
-  const [dbStatus, setDbStatus] = useState<any>(null);
+  const [dbStatus, setDbStatus] = useState<SetupStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   // Étape courante (1 à 4)
   const [currentStep, setCurrentStep] = useState(1);
 
-  // Formulaire Étape 1 : Base de données
-  const [dbConfig, setDbConfig] = useState({
-    useDefault: true,
-    host: "localhost",
-    port: 5432,
-    database: "edumanagepro",
-    user: "postgres",
-    password: "",
-  });
-
   // Formulaire Étape 2 : Établissement
   const [etablissement, setEtablissement] = useState({
-    nom: "Institut Supérieur des Technologies & Management",
-    code: "ISTM",
-    email: "contact@istm-edu.com",
-    telephone: "+225 27 22 00 00",
-    adresse: "Cocody Riviera, Boulevard de France",
-    ville: "Abidjan",
-    pays: "Côte d'Ivoire",
-    devise: "FCFA",
+    nom: "",
+    code: "",
+    email: "",
+    telephone: "",
+    adresse: "",
+    ville: "",
+    pays: "",
+    devise: "",
   });
 
   // Formulaire Étape 3 : SuperAdmin
   const [admin, setAdmin] = useState({
-    nom: "Directeur",
-    prenom: "Principal",
-    email: "admin@edumanagepro.com",
-    telephone: "+225 07 00 00 01",
+    nom: "",
+    prenom: "",
+    email: "",
+    telephone: "",
     password: "",
     confirmPassword: "",
   });
 
   // Formulaire Étape 4 : Licence & Options
   const [licence, setLicence] = useState({
-    licenseKey: "EMP-LIC-2026-ENTERPRISE-PRO",
-    initDefaultAcademicSession: true,
+    licenseKey: "",
   });
 
   // 1. Vérification préliminaire au chargement
   useEffect(() => {
     async function checkInit() {
       setCheckingStatus(true);
+      setStatusError(null);
       const res = await setupApi.getStatus();
       setCheckingStatus(false);
-      if (res.data) {
-        setDbStatus(res.data);
-        if (res.data.is_configured) {
-          toast.info("Le système est déjà configuré. Redirection vers la page de connexion...");
-          navigate("/login");
-        }
+      if (res.error || !res.data) {
+        setStatusError(res.error || "Le serveur n'a pas retourné son état d'initialisation.");
+        return;
+      }
+      setDbStatus(res.data);
+      if (!res.data.database_connected) {
+        setStatusError(res.data.details || "La base de données n'est pas accessible.");
+        return;
+      }
+      if (res.data.is_configured) {
+        toast.info("Le système est déjà configuré. Redirection vers la page de connexion...");
+        navigate("/login");
       }
     }
     checkInit();
@@ -116,8 +115,8 @@ export default function SetupWizard() {
       toast.error("Les deux mots de passe ne correspondent pas.");
       return;
     }
-    if (admin.password.length < 6) {
-      toast.error("Le mot de passe doit contenir au moins 6 caractères.");
+    if (admin.password.length < 8) {
+      toast.error("Le mot de passe doit contenir au moins 8 caractères.");
       return;
     }
 
@@ -139,16 +138,7 @@ export default function SetupWizard() {
         password: admin.password,
         telephone: admin.telephone,
       },
-      database: dbConfig.useDefault
-        ? undefined
-        : {
-            host: dbConfig.host,
-            port: Number(dbConfig.port),
-            database: dbConfig.database,
-            user: dbConfig.user,
-            password: dbConfig.password,
-          },
-      init_default_academic_session: licence.initDefaultAcademicSession,
+      database: undefined,
     };
 
     const res = await setupApi.initialize(payload);
@@ -181,6 +171,33 @@ export default function SetupWizard() {
     );
   }
 
+  if (statusError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md border-destructive/30">
+          <CardHeader>
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <AlertCircle className="h-6 w-6" />
+            </div>
+            <CardTitle className="text-center">Initialisation impossible</CardTitle>
+            <CardDescription className="text-center">
+              Le serveur ou la base de données doit être disponible avant de continuer.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert variant="destructive">
+              <AlertTitle>Vérification de l'instance</AlertTitle>
+              <AlertDescription>{statusError}</AlertDescription>
+            </Alert>
+            <Button type="button" className="w-full" onClick={() => window.location.reload()}>
+              Réessayer la vérification
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   // Écran de Succès Final
   if (setupCompleted) {
     return (
@@ -203,12 +220,6 @@ export default function SetupWizard() {
             <div className="flex justify-between">
               <span className="text-muted-foreground">Devise retenue :</span>
               <span className="font-semibold">{etablissement.devise}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Session académique :</span>
-              <span className="font-semibold">
-                {licence.initDefaultAcademicSession ? "2025-2026 (Active)" : "À configurer"}
-              </span>
             </div>
           </div>
           <Button
@@ -303,73 +314,35 @@ export default function SetupWizard() {
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-2 pt-2">
-                  <Checkbox
-                    id="useDefaultDb"
-                    checked={dbConfig.useDefault}
-                    onCheckedChange={(checked) =>
-                      setDbConfig({ ...dbConfig, useDefault: !!checked })
-                    }
-                  />
-                  <Label htmlFor="useDefaultDb" className="text-xs font-normal">
-                    Utiliser les paramètres de base de données par défaut du fichier d'environnement (.env)
-                  </Label>
+                <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3">
+                  <Checkbox checked disabled />
+                  <div>
+                    <Label className="text-xs font-medium">Connexion gérée par le serveur</Label>
+                    <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                      La base est configurée via les variables d'environnement ou Docker Compose.
+                      Le wizard ne permet pas de reconnecter l'application à une autre base.
+                    </p>
+                  </div>
                 </div>
 
-                {!dbConfig.useDefault && (
-                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/40">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Hôte PostgreSQL</Label>
-                      <Input
-                        value={dbConfig.host}
-                        onChange={(e) => setDbConfig({ ...dbConfig, host: e.target.value })}
-                        className="text-xs h-9"
-                        placeholder="localhost"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Port</Label>
-                      <Input
-                        type="number"
-                        value={dbConfig.port}
-                        onChange={(e) => setDbConfig({ ...dbConfig, port: Number(e.target.value) })}
-                        className="text-xs h-9"
-                        placeholder="5432"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Nom de la Base</Label>
-                      <Input
-                        value={dbConfig.database}
-                        onChange={(e) => setDbConfig({ ...dbConfig, database: e.target.value })}
-                        className="text-xs h-9"
-                        placeholder="edumanagepro"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Utilisateur</Label>
-                      <Input
-                        value={dbConfig.user}
-                        onChange={(e) => setDbConfig({ ...dbConfig, user: e.target.value })}
-                        className="text-xs h-9"
-                        placeholder="postgres"
-                      />
-                    </div>
-                    <div className="col-span-2 space-y-1">
-                      <Label className="text-xs">Mot de passe</Label>
-                      <Input
-                        type="password"
-                        value={dbConfig.password}
-                        onChange={(e) => setDbConfig({ ...dbConfig, password: e.target.value })}
-                        className="text-xs h-9"
-                        placeholder="••••••••"
-                      />
-                    </div>
-                  </div>
-                )}
+
+                 <Alert>
+                   <Database className="h-4 w-4" />
+                   <AlertTitle>État de la connexion</AlertTitle>
+                   <AlertDescription>
+                     {dbStatus?.database_connected
+                       ? "La connexion au serveur et à la base de données est opérationnelle."
+                       : "La connexion au serveur n'est pas encore confirmée."}
+                   </AlertDescription>
+                 </Alert>
               </CardContent>
               <CardFooter className="flex justify-end border-t border-border/40 pt-4">
-                <Button onClick={() => setCurrentStep(2)} className="text-xs h-9">
+                 <Button
+                   type="button"
+                   onClick={() => setCurrentStep(2)}
+                   disabled={!dbStatus?.database_connected}
+                   className="text-xs h-9"
+                 >
                   Continuer <ArrowRight className="ml-2 h-3.5 w-3.5" />
                 </Button>
               </CardFooter>
@@ -411,9 +384,10 @@ export default function SetupWizard() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs">Email officiel</Label>
+                    <Label className="text-xs">Email officiel *</Label>
                     <Input
                       type="email"
+                      required
                       value={etablissement.email}
                       onChange={(e) => setEtablissement({ ...etablissement, email: e.target.value })}
                       className="text-xs h-9"
@@ -440,20 +414,13 @@ export default function SetupWizard() {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Devise monétaire *</Label>
-                    <Select
+                    <Input
                       value={etablissement.devise}
-                      onValueChange={(val) => setEtablissement({ ...etablissement, devise: val })}
-                    >
-                      <SelectTrigger className="text-xs h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="FCFA">FCFA (XOF/XAF)</SelectItem>
-                        <SelectItem value="EUR">EUR (€)</SelectItem>
-                        <SelectItem value="USD">USD ($)</SelectItem>
-                        <SelectItem value="GNF">GNF (Franc guinéen)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                      onChange={(e) => setEtablissement({ ...etablissement, devise: e.target.value.toUpperCase() })}
+                      placeholder="Code de devise (ex. votre devise)"
+                      className="text-xs h-9"
+                      required
+                    />
                   </div>
                 </div>
               </CardContent>
@@ -463,8 +430,8 @@ export default function SetupWizard() {
                 </Button>
                 <Button
                   onClick={() => {
-                    if (!etablissement.nom || !etablissement.code) {
-                      toast.error("Veuillez renseigner le nom et le code de l'établissement.");
+                    if (!etablissement.nom || !etablissement.code || !etablissement.email || !etablissement.devise) {
+                      toast.error("Nom, code, email et devise de l'établissement sont obligatoires.");
                       return;
                     }
                     setCurrentStep(3);
@@ -540,7 +507,7 @@ export default function SetupWizard() {
                       value={admin.password}
                       onChange={(e) => setAdmin({ ...admin, password: e.target.value })}
                       className="text-xs h-9"
-                      placeholder="Min. 6 caractères"
+                      placeholder="Min. 8 caractères"
                     />
                   </div>
                   <div className="space-y-1">
@@ -578,8 +545,8 @@ export default function SetupWizard() {
                 </Button>
                 <Button
                   onClick={() => {
-                    if (!admin.email || !admin.password) {
-                      toast.error("Veuillez renseigner l'email et le mot de passe.");
+                    if (!admin.nom || !admin.prenom || !admin.email || !admin.password) {
+                      toast.error("Tous les identifiants administrateur sont obligatoires.");
                       return;
                     }
                     if (admin.password !== admin.confirmPassword) {
@@ -604,7 +571,7 @@ export default function SetupWizard() {
                   <KeyRound className="h-5 w-5 text-primary" /> Étape 4 : Licence & Finalisation
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Validation de la clé d'activation et génération des paramètres initiaux.
+                  Vérifiez les informations saisies avant de créer le compte administrateur.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -614,29 +581,16 @@ export default function SetupWizard() {
                     value={licence.licenseKey}
                     onChange={(e) => setLicence({ ...licence, licenseKey: e.target.value })}
                     className="text-xs h-9 font-mono uppercase"
-                    placeholder="EMP-LIC-2026-XXXX-XXXX"
+                    placeholder="Clé fournie par l'éditeur"
                   />
                   <p className="text-[11px] text-muted-foreground">
-                    Laisse active la licence standard pour le déploiement actuel.
+                    Champ optionnel. Une clé saisie sera conservée pour validation ; aucune activation automatique n'est simulée.
                   </p>
                 </div>
 
-                <div className="bg-muted/40 border border-border/40 rounded-lg p-3 space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="initSession"
-                      checked={licence.initDefaultAcademicSession}
-                      onCheckedChange={(c) =>
-                        setLicence({ ...licence, initDefaultAcademicSession: !!c })
-                      }
-                    />
-                    <Label htmlFor="initSession" className="text-xs font-semibold cursor-pointer">
-                      Générer la session académique initiale 2025-2026
-                    </Label>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground pl-6">
-                    Crée automatiquement la session active 2025-2026 avec le calendrier financier en 10 tranches mensuelles (Octobre à Juillet).
-                  </p>
+                <div className="rounded-lg border border-border/60 bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
+                  Aucune session, tranche ou donnée financière de démonstration ne sera créée.
+                  Vous configurerez ces éléments depuis le backend après la connexion.
                 </div>
 
                 {/* Récapitulatif */}

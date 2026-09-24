@@ -58,6 +58,12 @@ Backend/tmp/
 logs/
 *.log
 
+# Pièces d'admission stockées localement (ne jamais versionner les fichiers)
+Backend/storage/*
+!Backend/storage/
+!Backend/storage/admissions/
+!Backend/storage/admissions/.gitkeep
+
 # ------------------------------------------------------------------------------
 # Frontend (Node / Vite / React)
 # ------------------------------------------------------------------------------

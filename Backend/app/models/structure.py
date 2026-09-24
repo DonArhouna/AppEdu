@@ -67,8 +67,8 @@ class Filiere(Base, TimestampMixin):
     nom: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    diplome: Mapped[str] = mapped_column(String(50), nullable=False, default="Licence")  # Licence, Master, BTS
-    duree: Mapped[int] = mapped_column(Integer, nullable=False, default=3)  # Durée en années
+    diplome: Mapped[str] = mapped_column(String(50), nullable=False)
+    duree: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Relations
     departement: Mapped[Optional["Departement"]] = relationship("Departement", back_populates="filieres")
@@ -89,11 +89,11 @@ class UniteEnseignement(Base, TimestampMixin):
     )
     nom: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
-    credits: Mapped[int] = mapped_column(Integer, nullable=False, default=6)  # ECTS
-    coefficient: Mapped[float] = mapped_column(Float, nullable=False, default=3.0)
-    heures: Mapped[int] = mapped_column(Integer, nullable=False, default=45)
-    semestre: Mapped[str] = mapped_column(String(20), nullable=False, default="S1")  # S1..S6
-    niveau: Mapped[str] = mapped_column(String(50), nullable=False, default="Licence 1")
+    credits: Mapped[int] = mapped_column(Integer, nullable=False)  # ECTS
+    coefficient: Mapped[float] = mapped_column(Float, nullable=False)
+    heures: Mapped[int] = mapped_column(Integer, nullable=False)
+    semestre: Mapped[str] = mapped_column(String(20), nullable=False)  # S1..S6
+    niveau: Mapped[str] = mapped_column(String(50), nullable=False)
     responsable: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
 
     # Relations
@@ -115,11 +115,11 @@ class Matiere(Base, TimestampMixin):
     )
     nom: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
-    credits: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
-    coefficient: Mapped[float] = mapped_column(Float, nullable=False, default=1.5)
-    heures_cm: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
-    heures_td: Mapped[int] = mapped_column(Integer, nullable=False, default=15)
-    heures_tp: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    credits: Mapped[int] = mapped_column(Integer, nullable=False)
+    coefficient: Mapped[float] = mapped_column(Float, nullable=False)
+    heures_cm: Mapped[int] = mapped_column(Integer, nullable=False)
+    heures_td: Mapped[int] = mapped_column(Integer, nullable=False)
+    heures_tp: Mapped[int] = mapped_column(Integer, nullable=False)
     enseignant_nom: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 

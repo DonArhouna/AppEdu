@@ -46,6 +46,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { StudentDialog, Student } from "@/components/students/StudentDialog";
+import type { AcademicSession, Filiere, Student as StudentApi } from "@/services/apiTypes";
 import { toast } from "sonner";
 import { etudiantsApi, sessionsApi, structureApi } from "@/services/apiClient";
 
@@ -57,14 +58,14 @@ const Etudiants = () => {
   const [filterCycle, setFilterCycle] = useState("all");
   const [filterSession, setFilterSession] = useState("all");
 
-  const [sessions, setSessions] = useState<any[]>([]);
-  const [filieresList, setFilieresList] = useState<any[]>([]);
-  const [students, setStudents] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<AcademicSession[]>([]);
+  const [filieresList, setFilieresList] = useState<Filiere[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState<string | null>(null);
 
@@ -84,24 +85,21 @@ const Etudiants = () => {
       } else {
         const raw = etudiantsRes.data || [];
         setStudents(
-          raw.map((s: any) => ({
+          raw.map((s: StudentApi) => ({
             id: s.id,
             matricule: s.matricule,
             nom: s.nom,
             prenom: s.prenom,
-            email: s.email,
+            email: s.email || "",
             telephone: s.telephone || "",
-            filiere: s.filiere || "Non assigné",
-            niveau: s.niveau || "Licence 1",
-            cycle: s.niveau?.startsWith("Master") ? "Master" : "Licence",
-            statut: s.statut || "actif",
-            creditsValides: s.credits_valides || 0,
-            decisionPassage:
-              (s.credits_valides || 0) >= 60
-                ? "Admis Direct (60/60 ECTS)"
-                : (s.credits_valides || 0) >= 45
-                ? "Passage Conditionnel"
-                : "En cours",
+            dateNaissance: s.date_naissance || "",
+            lieuNaissance: s.lieu_naissance || "",
+            promotion: "",
+            filiere: s.filiere || "",
+            niveau: s.niveau || "",
+            cycle: s.niveau?.startsWith("Master") ? "Master" : s.niveau?.startsWith("Licence") ? "Licence" : "",
+            statut: s.statut || "",
+            creditsValides: undefined,
             sessionId: s.session_id || "",
           }))
         );
@@ -113,8 +111,8 @@ const Etudiants = () => {
       if (filieresRes.data) {
         setFilieresList(filieresRes.data);
       }
-    } catch (err: any) {
-      setError(err?.message || "Erreur de connexion au serveur backend.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur de connexion au serveur backend.");
     } finally {
       setLoading(false);
     }
@@ -139,7 +137,10 @@ const Etudiants = () => {
     return matchesSearch && matchesFiliere && matchesNiveau && matchesCycle && matchesSession;
   });
 
-  const handleSaveStudent = async (student: any) => {
+  const availableCycles = Array.from(new Set(students.map((student) => student.cycle).filter(Boolean)));
+  const availableNiveaux = Array.from(new Set(students.map((student) => student.niveau).filter(Boolean)));
+
+  const handleSaveStudent = async (student: Student) => {
     const payload = {
       nom: student.nom,
       prenom: student.prenom,
@@ -148,7 +149,7 @@ const Etudiants = () => {
       filiere: student.filiere,
       niveau: student.niveau,
       session_id: student.sessionId || undefined,
-      statut: student.statut || "actif",
+      statut: student.statut,
     };
 
     if (selectedStudent?.id) {
@@ -172,7 +173,7 @@ const Etudiants = () => {
     await loadData();
   };
 
-  const handleEditStudent = (student: any) => {
+  const handleEditStudent = (student: Student) => {
     setSelectedStudent(student);
     setDialogOpen(true);
   };
@@ -294,8 +295,9 @@ const Etudiants = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Tous les cycles</SelectItem>
-                    <SelectItem value="Licence">Cycle Licence</SelectItem>
-                    <SelectItem value="Master">Cycle Master</SelectItem>
+                    {availableCycles.map((cycle) => (
+                      <SelectItem key={cycle} value={cycle}>{cycle}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -305,7 +307,7 @@ const Etudiants = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Toutes les filières</SelectItem>
-                  {filieresList.map((f: any) => (
+                  {filieresList.map((f) => (
                     <SelectItem key={f.id} value={f.nom}>
                       {f.nom}
                     </SelectItem>
@@ -318,11 +320,9 @@ const Etudiants = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tous les niveaux</SelectItem>
-                  <SelectItem value="Licence 1">Licence 1</SelectItem>
-                  <SelectItem value="Licence 2">Licence 2</SelectItem>
-                  <SelectItem value="Licence 3">Licence 3</SelectItem>
-                  <SelectItem value="Master 1">Master 1</SelectItem>
-                  <SelectItem value="Master 2">Master 2</SelectItem>
+                  {availableNiveaux.map((niveau) => (
+                    <SelectItem key={niveau} value={niveau}>{niveau}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 
@@ -370,7 +370,7 @@ const Etudiants = () => {
                     <TableHead>Cycle & Filière</TableHead>
                     <TableHead>Niveau</TableHead>
                     <TableHead>Session Académique</TableHead>
-                    <TableHead>Décision LMD</TableHead>
+                    <TableHead>Crédits validés</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -413,17 +413,7 @@ const Etudiants = () => {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            className={
-                              student.decisionPassage.includes("Admis") || student.decisionPassage.includes("Diplômé")
-                                ? "bg-emerald-500/15 text-emerald-700 border-emerald-300"
-                                : student.decisionPassage.includes("Conditionnel")
-                                ? "bg-amber-500/15 text-amber-700 border-amber-300"
-                                : "bg-red-500/15 text-red-700 border-red-300"
-                            }
-                          >
-                            {student.decisionPassage}
-                          </Badge>
+                          <span className="font-mono text-sm">{student.creditsValides ?? "Non calculé"}</span>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">

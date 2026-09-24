@@ -3,7 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, UserCheck, CreditCard, GraduationCap, RefreshCw, AlertCircle, ArrowRight } from "lucide-react";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { Button } from "@/components/ui/button";
-import { etudiantsApi, structureApi, financesApi, sessionsApi } from "@/services/apiClient";
+import { etudiantsApi, structureApi, financesApi, sessionsApi, setupApi } from "@/services/apiClient";
+import type { Payment, Student } from "@/services/apiTypes";
 import { Link } from "react-router-dom";
 
 interface DashboardData {
@@ -25,21 +26,23 @@ const Dashboard = () => {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState("");
 
   const loadDashboard = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const [etudiantsRes, filieresRes, paiementsRes, sessionRes] = await Promise.all([
+      const [etudiantsRes, filieresRes, paiementsRes, sessionRes, statusResult] = await Promise.all([
         etudiantsApi.getAll(),
         structureApi.getFilieres(),
         financesApi.getPaiements(),
         sessionsApi.getActive(),
+        setupApi.getStatus(),
       ]);
 
-      if (etudiantsRes.error || filieresRes.error || paiementsRes.error) {
-        const firstErr = etudiantsRes.error || filieresRes.error || paiementsRes.error;
+      if (etudiantsRes.error || filieresRes.error || paiementsRes.error || sessionRes.error || statusResult.error) {
+        const firstErr = etudiantsRes.error || filieresRes.error || paiementsRes.error || sessionRes.error || statusResult.error;
         setError(firstErr || "Impossible de charger les données du tableau de bord.");
         setLoading(false);
         return;
@@ -49,14 +52,18 @@ const Dashboard = () => {
       const filieres = filieresRes.data || [];
       const paiements = paiementsRes.data || [];
       const activeSession = sessionRes.data;
+      setCurrency(statusResult.data?.devise || "");
 
-      const totalEncaisse = paiements.reduce((acc: number, p: any) => acc + (Number(p.montant) || 0), 0);
-      const actifs = students.filter((s: any) => s.statut === "actif" || s.statut === "valide").length;
+      const totalEncaisse = paiements.reduce((acc: number, p: Payment) => acc + (Number(p.montant) || 0), 0);
+      const actifs = students.filter((s: Student) => s.statut === "actif" || s.statut === "valide").length;
 
-      const recentPayments = paiements.slice(0, 5).map((p: any) => ({
+      const recentPayments = paiements.slice(0, 5).map((p: Payment) => ({
         id: p.id,
         montant: p.montant,
-        etudiantNom: p.etudiant_nom || p.etudiant_id,
+        etudiantNom: (() => {
+          const student = students.find((item) => item.id === p.etudiant_id);
+          return student ? `${student.prenom || ""} ${student.nom || ""}`.trim() : p.etudiant_id;
+        })(),
         date: p.date_paiement,
         mode: p.mode_paiement,
       }));
@@ -69,8 +76,8 @@ const Dashboard = () => {
         activeSessionNom: activeSession?.nom || "Non définie",
         recentPayments,
       });
-    } catch (err: any) {
-      setError(err?.message || "Erreur de connexion au serveur backend.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur de connexion au serveur backend.");
     } finally {
       setLoading(false);
     }
@@ -101,7 +108,7 @@ const Dashboard = () => {
         </Button>
       </div>
 
-      {/* État d'erreur clair sans repli mock */}
+      {/* Erreur backend affichée sans données de remplacement */}
       {error && (
         <Card className="border-destructive/40 bg-destructive/5 p-4 rounded-xl">
           <div className="flex items-center gap-3">
@@ -146,7 +153,7 @@ const Dashboard = () => {
             colorVariant="emerald"
           />
           <KpiCard
-            title="Filières Actives"
+            title="Filières enregistrées"
             value={data.totalFilieres.toString()}
             icon={GraduationCap}
             trendLabel="Offre de formation"
@@ -154,7 +161,7 @@ const Dashboard = () => {
           />
           <KpiCard
             title="Total Encaissé"
-            value={`${data.totalEncaisse.toLocaleString("fr-FR")} FCFA`}
+            value={`${data.totalEncaisse.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`}
             icon={CreditCard}
             trendLabel="Encaissements validés"
             colorVariant="amber"
@@ -178,7 +185,7 @@ const Dashboard = () => {
                   <div key={p.id} className="flex items-center justify-between border-b border-border/40 pb-3 last:border-0 last:pb-0">
                     <div>
                       <p className="text-sm font-semibold text-foreground">
-                        {Number(p.montant).toLocaleString("fr-FR")} FCFA ({p.mode})
+                        {Number(p.montant).toLocaleString("fr-FR")} {currency || "devise de l'établissement"} ({p.mode})
                       </p>
                       <p className="text-xs text-muted-foreground">{p.etudiantNom}</p>
                     </div>
@@ -204,8 +211,8 @@ const Dashboard = () => {
                 <p className="font-semibold text-foreground">Session Académique Courante</p>
                 <p className="text-muted-foreground">{data?.activeSessionNom || "Chargement..."}</p>
               </div>
-              <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                Active
+              <span className={`text-xs font-bold px-2 py-0.5 rounded border ${data?.activeSessionNom && data.activeSessionNom !== "Non définie" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : "bg-muted text-muted-foreground border-border"}`}>
+                {data?.activeSessionNom && data.activeSessionNom !== "Non définie" ? "Active" : "Non définie"}
               </span>
             </div>
 

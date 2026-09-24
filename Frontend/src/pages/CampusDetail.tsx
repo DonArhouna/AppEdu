@@ -6,11 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { structureApi } from "@/services/apiClient";
+import type { Campus } from "@/services/apiTypes";
 
 export default function CampusDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [campus, setCampus] = useState<any>(null);
+  const [campus, setCampus] = useState<Campus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,15 +25,15 @@ export default function CampusDetail() {
         if (res.error) {
           setError(res.error);
         } else {
-          const found = (res.data || []).find((c: any) => c.id === id);
+          const found = (res.data || []).find((c) => c.id === id);
           if (found) {
             setCampus(found);
           } else {
             setError("Campus non trouvé dans la base de données.");
           }
         }
-      } catch (err: any) {
-        setError(err?.message || "Erreur de connexion.");
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Erreur de connexion.");
       } finally {
         setLoading(false);
       }
@@ -92,7 +93,7 @@ export default function CampusDetail() {
             <MapPin className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold">{campus.ville || "Abidjan"}</div>
+            <div className="text-xl font-bold">{campus.ville || "Non renseignée"}</div>
             <p className="text-xs text-muted-foreground">{campus.adresse || "Adresse non renseignée"}</p>
           </CardContent>
         </Card>

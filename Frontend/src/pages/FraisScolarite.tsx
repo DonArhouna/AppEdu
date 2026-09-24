@@ -1,346 +1,435 @@
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { AlertCircle, DollarSign, Edit, Layers, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Edit, Trash2, DollarSign, Settings, Layers, Lock } from "lucide-react";
-import { toast } from "sonner";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { extractErrorMessage, financesApi, setupApi, structureApi } from "@/services/apiClient";
 
 interface TarificationConfig {
   id: string;
+  filiere_id: string | null;
   filiere: string;
   niveau: string;
-  droitsInscription: number;
-  scolariteMensuelle: number;
-  nbMois: number;
-  totalAnnuel: number;
+  droits_inscription: number;
+  scolarite_mensuelle: number;
+  nombre_mois: number;
+  total_annuel: number;
+  actif: boolean;
 }
 
-const FraisScolarite = () => {
-  const [configs, setConfigs] = useState<TarificationConfig[]>([
-    {
-      id: "1",
-      filiere: "Génie Informatique",
-      niveau: "Licence 1",
-      droitsInscription: 150000,
-      scolariteMensuelle: 60000,
-      nbMois: 9,
-      totalAnnuel: 690000,
-    },
-    {
-      id: "2",
-      filiere: "Génie Informatique",
-      niveau: "Licence 3",
-      droitsInscription: 150000,
-      scolariteMensuelle: 65000,
-      nbMois: 9,
-      totalAnnuel: 735000,
-    },
-    {
-      id: "3",
-      filiere: "Gestion & Finance",
-      niveau: "Master 1",
-      droitsInscription: 200000,
-      scolariteMensuelle: 85000,
-      nbMois: 9,
-      totalAnnuel: 965000,
-    },
-  ]);
+interface FiliereOption {
+  id: string;
+  nom: string;
+}
 
+const emptyForm = {
+  filiere_id: "",
+  filiere: "",
+  niveau: "",
+  droits_inscription: "",
+  scolarite_mensuelle: "",
+  nombre_mois: "",
+};
+
+const FraisScolarite = () => {
+  const [configs, setConfigs] = useState<TarificationConfig[]>([]);
+  const [filieres, setFilieres] = useState<FiliereOption[]>([]);
+  const [currency, setCurrency] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingConfig, setEditingConfig] = useState<TarificationConfig | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [formData, setFormData] = useState(emptyForm);
 
-  const [formData, setFormData] = useState({
-    filiere: "Génie Informatique",
-    niveau: "Licence 1",
-    droitsInscription: "150000",
-    scolariteMensuelle: "60000",
-    nbMois: "9",
-  });
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    const [grillesResult, filieresResult, setupResult] = await Promise.all([
+      financesApi.getGrillesTarifaires(),
+      structureApi.getFilieres(),
+      setupApi.getStatus(),
+    ]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const dInscr = parseFloat(formData.droitsInscription) || 0;
-    const sMens = parseFloat(formData.scolariteMensuelle) || 0;
-    const nMois = parseInt(formData.nbMois) || 9;
-    const tot = dInscr + sMens * nMois;
-
-    if (editingConfig) {
-      setConfigs(
-        configs.map((c) =>
-          c.id === editingConfig.id
-            ? {
-                ...c,
-                filiere: formData.filiere,
-                niveau: formData.niveau,
-                droitsInscription: dInscr,
-                scolariteMensuelle: sMens,
-                nbMois: nMois,
-                totalAnnuel: tot,
-              }
-            : c
+    if (grillesResult.error || filieresResult.error) {
+      setError(
+        extractErrorMessage(
+          grillesResult.error || filieresResult.error,
+          "Impossible de charger les grilles tarifaires."
         )
       );
-      toast.success("Grille tarifaire mise à jour.");
+      setConfigs([]);
+      setFilieres([]);
     } else {
-      const newC: TarificationConfig = {
-        id: String(Date.now()),
-        filiere: formData.filiere,
-        niveau: formData.niveau,
-        droitsInscription: dInscr,
-        scolariteMensuelle: sMens,
-        nbMois: nMois,
-        totalAnnuel: tot,
-      };
-      setConfigs([...configs, newC]);
-      toast.success("Nouvelle grille tarifaire configurée.");
+      setConfigs((grillesResult.data || []) as TarificationConfig[]);
+      setFilieres((filieresResult.data || []) as FiliereOption[]);
+    }
+    setCurrency(setupResult.data?.devise || "");
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  const activeConfigs = useMemo(() => configs.filter((config) => config.actif), [configs]);
+  const averageInscription = useMemo(
+    () =>
+      activeConfigs.length
+        ? activeConfigs.reduce((sum, config) => sum + Number(config.droits_inscription), 0) /
+          activeConfigs.length
+        : 0,
+    [activeConfigs]
+  );
+  const averageMensualite = useMemo(
+    () =>
+      activeConfigs.length
+        ? activeConfigs.reduce((sum, config) => sum + Number(config.scolarite_mensuelle), 0) /
+          activeConfigs.length
+        : 0,
+    [activeConfigs]
+  );
+
+  const openCreateDialog = () => {
+    setEditingConfig(null);
+    setFormData(emptyForm);
+    setShowForm(true);
+  };
+
+  const openEditDialog = (config: TarificationConfig) => {
+    setEditingConfig(config);
+    setFormData({
+      filiere_id: config.filiere_id || "",
+      filiere: config.filiere,
+      niveau: config.niveau,
+      droits_inscription: String(config.droits_inscription),
+      scolarite_mensuelle: String(config.scolarite_mensuelle),
+      nombre_mois: String(config.nombre_mois),
+    });
+    setShowForm(true);
+  };
+
+  const handleFiliereChange = (filiereId: string) => {
+    const filiere = filieres.find((item) => item.id === filiereId);
+    setFormData((current) => ({
+      ...current,
+      filiere_id: filiereId,
+      filiere: filiere?.nom || "",
+    }));
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const droitsInscription = Number(formData.droits_inscription);
+    const scolariteMensuelle = Number(formData.scolarite_mensuelle);
+    const nombreMois = Number(formData.nombre_mois);
+
+    if (!formData.filiere || !formData.niveau.trim()) {
+      toast.error("La filière et le niveau sont obligatoires.");
+      return;
+    }
+    if (
+      !Number.isFinite(droitsInscription) ||
+      !Number.isFinite(scolariteMensuelle) ||
+      !Number.isInteger(nombreMois) ||
+      droitsInscription < 0 ||
+      scolariteMensuelle < 0 ||
+      nombreMois < 1
+    ) {
+      toast.error("Renseignez des montants et un nombre de mois valides.");
+      return;
     }
 
+    const payload = {
+      filiere_id: formData.filiere_id || null,
+      filiere: formData.filiere.trim(),
+      niveau: formData.niveau.trim(),
+      droits_inscription: droitsInscription,
+      scolarite_mensuelle: scolariteMensuelle,
+      nombre_mois: nombreMois,
+      actif: true,
+    };
+
+    setSaving(true);
+    const result = editingConfig
+      ? await financesApi.updateGrilleTarifaire(editingConfig.id, payload)
+      : await financesApi.createGrilleTarifaire(payload);
+    setSaving(false);
+
+    if (result.error) {
+      toast.error(extractErrorMessage(result.error));
+      return;
+    }
+
+    toast.success(editingConfig ? "Grille tarifaire mise à jour." : "Grille tarifaire créée.");
     setShowForm(false);
     setEditingConfig(null);
+    await loadData();
   };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    const result = await financesApi.deleteGrilleTarifaire(deleteId);
+    if (result.error) {
+      toast.error(extractErrorMessage(result.error));
+      return;
+    }
+    toast.success("Grille tarifaire supprimée.");
+    setDeleteId(null);
+    await loadData();
+  };
+
+  const currencyLabel = currency || "devise de l'établissement";
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Configuration des Tarifs & Frais</h1>
-          <p className="text-muted-foreground mt-1">
-            Définition des droits d'inscription et échéanciers de scolarité par filière et classe
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Frais de scolarité</h1>
+          <p className="mt-1 text-muted-foreground">
+            Configurez les droits et montants par filière et niveau. Les données proviennent de l'API.
           </p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)} className="shadow-md">
-          <Plus className="mr-2 h-4 w-4" /> Nouvelle Grille Tarifaire
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={loadData} disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Actualiser
+          </Button>
+          <Button onClick={openCreateDialog} disabled={loading || filieres.length === 0}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nouvelle grille
+          </Button>
+        </div>
       </div>
 
-      {/* Uniform KPI Cards Standard */}
+      {error && (
+        <Card className="border-destructive/40 bg-destructive/5 p-4">
+          <div className="flex items-center gap-3 text-sm text-destructive">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <span>{error}</span>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={loadData}>
+              Réessayer
+            </Button>
+          </div>
+        </Card>
+      )}
+
       <div className="grid gap-5 md:grid-cols-3">
-        <Card className="card-base relative overflow-hidden">
-          <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
-          <CardHeader className="flex flex-row items-center justify-between pb-2 pl-5">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Grilles Configurées
-            </CardTitle>
-            <div className="p-2 rounded-xl bg-primary/10 text-primary">
-              <Settings className="h-4 w-4" />
-            </div>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">Grilles actives</CardTitle>
+            <Layers className="h-4 w-4 text-primary" />
           </CardHeader>
-          <CardContent className="pl-5">
-            <div className="text-2xl font-bold text-foreground">{configs.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">Niveaux d'études paramétrés</p>
+          <CardContent>
+            <p className="text-2xl font-bold">{activeConfigs.length}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Configurations actuellement disponibles</p>
           </CardContent>
         </Card>
-
-        <Card className="card-base relative overflow-hidden">
-          <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />
-          <CardHeader className="flex flex-row items-center justify-between pb-2 pl-5">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Moyenne Droits d'Inscription
-            </CardTitle>
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500">
-              <Lock className="h-4 w-4" />
-            </div>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">Droits moyens</CardTitle>
+            <DollarSign className="h-4 w-4 text-emerald-600" />
           </CardHeader>
-          <CardContent className="pl-5">
-            <div className="text-2xl font-bold text-emerald-600 font-mono">
-              {(
-                configs.reduce((acc, c) => acc + c.droitsInscription, 0) / (configs.length || 1)
-              ).toLocaleString()}{" "}
-              FCFA
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Verrouillé au guichet</p>
+          <CardContent>
+            <p className="text-2xl font-bold text-emerald-600">
+              {averageInscription.toLocaleString("fr-FR")} {currencyLabel}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Moyenne des grilles actives</p>
           </CardContent>
         </Card>
-
-        <Card className="card-base relative overflow-hidden">
-          <div className="absolute left-0 top-0 bottom-0 w-1 bg-purple-500" />
-          <CardHeader className="flex flex-row items-center justify-between pb-2 pl-5">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Scolarité Mensuelle Moyenne
-            </CardTitle>
-            <div className="p-2 rounded-xl bg-purple-500/10 text-purple-500">
-              <DollarSign className="h-4 w-4" />
-            </div>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">Mensualité moyenne</CardTitle>
+            <DollarSign className="h-4 w-4 text-violet-600" />
           </CardHeader>
-          <CardContent className="pl-5">
-            <div className="text-2xl font-bold text-purple-600 font-mono">
-              {(
-                configs.reduce((acc, c) => acc + c.scolariteMensuelle, 0) / (configs.length || 1)
-              ).toLocaleString()}{" "}
-              FCFA
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Tarif mensuel standard</p>
+          <CardContent>
+            <p className="text-2xl font-bold text-violet-600">
+              {averageMensualite.toLocaleString("fr-FR")} {currencyLabel}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Montant mensuel moyen déclaré</p>
           </CardContent>
         </Card>
       </div>
 
       {showForm && (
-        <Card className="card-base">
+        <Card>
           <CardHeader>
-            <CardTitle>{editingConfig ? "Modifier" : "Créer"} une Grille Tarifaire</CardTitle>
+            <CardTitle>{editingConfig ? "Modifier la grille" : "Créer une grille"}</CardTitle>
             <CardDescription>
-              Fixez les montants qui seront automatiquement appliqués lors des encaissements au guichet
+              Les montants saisis seront utilisés par le guichet et les écrans de paiement.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
-                  <Label htmlFor="filiere">Filière</Label>
-                  <Select
-                    value={formData.filiere}
-                    onValueChange={(val) => setFormData({ ...formData, filiere: val })}
-                  >
-                    <SelectTrigger id="filiere">
-                      <SelectValue />
+                  <Label htmlFor="fee-filiere">Filière *</Label>
+                  <Select value={formData.filiere_id} onValueChange={handleFiliereChange}>
+                    <SelectTrigger id="fee-filiere">
+                      <SelectValue placeholder="Sélectionner une filière" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Génie Informatique">Génie Informatique</SelectItem>
-                      <SelectItem value="Gestion & Finance">Gestion & Finance</SelectItem>
-                      <SelectItem value="Commerce & Marketing">Commerce & Marketing</SelectItem>
+                      {filieres.map((filiere) => (
+                        <SelectItem key={filiere.id} value={filiere.id}>
+                          {filiere.nom}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="niveau">Niveau / Classe</Label>
-                  <Select
+                  <Label htmlFor="fee-niveau">Niveau / classe *</Label>
+                  <Input
+                    id="fee-niveau"
                     value={formData.niveau}
-                    onValueChange={(val) => setFormData({ ...formData, niveau: val })}
-                  >
-                    <SelectTrigger id="niveau">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Licence 1">Licence 1</SelectItem>
-                      <SelectItem value="Licence 2">Licence 2</SelectItem>
-                      <SelectItem value="Licence 3">Licence 3</SelectItem>
-                      <SelectItem value="Master 1">Master 1</SelectItem>
-                      <SelectItem value="Master 2">Master 2</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="dInscr">Droits d'Inscription (FCFA)</Label>
-                  <Input
-                    id="dInscr"
-                    type="number"
-                    value={formData.droitsInscription}
-                    onChange={(e) => setFormData({ ...formData, droitsInscription: e.target.value })}
+                    onChange={(event) => setFormData((current) => ({ ...current, niveau: event.target.value }))}
+                    placeholder="Niveau défini par l'établissement"
+                    required
                   />
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="sMens">Frais de Scolarité Mensuels (FCFA)</Label>
+                  <Label htmlFor="fee-mois">Nombre de mois *</Label>
                   <Input
-                    id="sMens"
+                    id="fee-mois"
                     type="number"
-                    value={formData.scolariteMensuelle}
-                    onChange={(e) => setFormData({ ...formData, scolariteMensuelle: e.target.value })}
+                    min={1}
+                    max={24}
+                    value={formData.nombre_mois}
+                    onChange={(event) => setFormData((current) => ({ ...current, nombre_mois: event.target.value }))}
+                    required
                   />
                 </div>
-
                 <div className="space-y-2">
-                  <Label htmlFor="nMois">Nombre de Mois d'Échéance</Label>
+                  <Label htmlFor="fee-inscription">Droits d'inscription ({currencyLabel}) *</Label>
                   <Input
-                    id="nMois"
+                    id="fee-inscription"
                     type="number"
-                    value={formData.nbMois}
-                    onChange={(e) => setFormData({ ...formData, nbMois: e.target.value })}
+                    min={0}
+                    step="0.01"
+                    value={formData.droits_inscription}
+                    onChange={(event) => setFormData((current) => ({ ...current, droits_inscription: event.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fee-mensualite">Scolarité mensuelle ({currencyLabel}) *</Label>
+                  <Input
+                    id="fee-mensualite"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={formData.scolarite_mensuelle}
+                    onChange={(event) => setFormData((current) => ({ ...current, scolarite_mensuelle: event.target.value }))}
+                    required
                   />
                 </div>
               </div>
-
-              <div className="flex gap-2 justify-end pt-2">
+              <div className="flex justify-end gap-2 border-t pt-4">
                 <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
                   Annuler
                 </Button>
-                <Button type="submit">Enregistrer la Grille</Button>
+                <Button type="submit" disabled={saving}>
+                  {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Enregistrer
+                </Button>
               </div>
             </form>
           </CardContent>
         </Card>
       )}
 
-      {/* Configurations Table */}
-      <Card className="card-base">
-        <CardHeader className="p-5">
-          <CardTitle className="text-lg">Tarifs & Droits Configurés</CardTitle>
+      <Card>
+        <CardHeader>
+          <CardTitle>Grilles enregistrées</CardTitle>
+          <CardDescription>Aucune grille n'est créée automatiquement lors du setup.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="border-t overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/40">
-                  <TableHead>Filière</TableHead>
-                  <TableHead>Niveau</TableHead>
-                  <TableHead>Droits d'Inscription</TableHead>
-                  <TableHead>Scolarité Mensuelle</TableHead>
-                  <TableHead>Mois / An</TableHead>
-                  <TableHead>Total Annuel Attendu</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {configs.map((c) => (
-                  <TableRow key={c.id} className="hover:bg-muted/30">
-                    <TableCell className="font-semibold text-sm">{c.filiere}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{c.niveau}</Badge>
-                    </TableCell>
-                    <TableCell className="font-mono font-bold text-foreground">
-                      {c.droitsInscription.toLocaleString()} FCFA
-                    </TableCell>
-                    <TableCell className="font-mono font-semibold text-foreground">
-                      {c.scolariteMensuelle.toLocaleString()} FCFA / mois
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{c.nbMois} mois</TableCell>
-                    <TableCell className="font-mono font-bold text-emerald-600">
-                      {c.totalAnnuel.toLocaleString()} FCFA
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setEditingConfig(c);
-                          setFormData({
-                            filiere: c.filiere,
-                            niveau: c.niveau,
-                            droitsInscription: String(c.droitsInscription),
-                            scolariteMensuelle: String(c.scolariteMensuelle),
-                            nbMois: String(c.nbMois),
-                          });
-                          setShowForm(true);
-                        }}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setConfigs(configs.filter((item) => item.id !== c.id));
-                          toast.success("Grille tarifaire supprimée.");
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </TableCell>
+          <div className="overflow-x-auto border-t">
+            {loading ? (
+              <div className="flex items-center justify-center gap-2 p-12 text-sm text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" /> Chargement des grilles...
+              </div>
+            ) : configs.length === 0 ? (
+              <div className="p-12 text-center text-sm text-muted-foreground">
+                Aucune grille configurée. Créez la première grille depuis cette page.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40">
+                    <TableHead>Filière</TableHead>
+                    <TableHead>Niveau</TableHead>
+                    <TableHead>Droits d'inscription</TableHead>
+                    <TableHead>Mensualité</TableHead>
+                    <TableHead>Durée</TableHead>
+                    <TableHead>Total annuel</TableHead>
+                    <TableHead>Statut</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {configs.map((config) => (
+                    <TableRow key={config.id}>
+                      <TableCell className="font-medium">{config.filiere}</TableCell>
+                      <TableCell><Badge variant="outline">{config.niveau}</Badge></TableCell>
+                      <TableCell className="font-mono">{config.droits_inscription.toLocaleString("fr-FR")} {currencyLabel}</TableCell>
+                      <TableCell className="font-mono">{config.scolarite_mensuelle.toLocaleString("fr-FR")} {currencyLabel}</TableCell>
+                      <TableCell>{config.nombre_mois} mois</TableCell>
+                      <TableCell className="font-mono font-semibold text-emerald-600">{config.total_annuel.toLocaleString("fr-FR")} {currencyLabel}</TableCell>
+                      <TableCell>
+                        <Badge variant={config.actif ? "default" : "secondary"}>
+                          {config.actif ? "Active" : "Inactive"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(config)} aria-label="Modifier">
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => setDeleteId(config.id)} aria-label="Supprimer">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </div>
         </CardContent>
       </Card>
+
+      <AlertDialog open={Boolean(deleteId)} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer cette grille ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Les paiements déjà enregistrés ne seront pas supprimés, mais cette grille ne sera plus proposée.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

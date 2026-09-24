@@ -8,22 +8,22 @@ from app.schemas.user import UserResponse
 
 
 class EtablissementSetupInput(BaseModel):
-    nom: str = Field(..., example="Institut Africain de Management")
-    code: str = Field(..., example="IAM-DK")
-    adresse: Optional[str] = Field(None, example="Point E, Dakar, Sénégal")
-    telephone: Optional[str] = Field(None, example="+221 33 869 36 36")
-    email: Optional[EmailStr] = Field(None, example="contact@iam.sn")
-    site_web: Optional[str] = Field(None, example="https://iam.sn")
-    devise: str = Field("FCFA", example="FCFA")
-    license_key: Optional[str] = Field(None, example="EMP-LIC-2026-IAMDK")
+    nom: str = Field(..., min_length=2)
+    code: str = Field(..., min_length=2, max_length=50)
+    adresse: Optional[str] = None
+    telephone: Optional[str] = None
+    email: EmailStr
+    site_web: Optional[str] = None
+    devise: str = Field(..., min_length=3, max_length=10)
+    license_key: Optional[str] = None
 
 
 class AdminSetupInput(BaseModel):
-    nom: str = Field(..., example="Directeur")
-    prenom: str = Field(..., example="Admin")
-    email: EmailStr = Field(..., example="admin@iam.sn")
-    password: str = Field(..., min_length=6, example="Admin@2026!")
-    telephone: Optional[str] = Field(None, example="+221 77 000 00 00")
+    nom: str = Field(..., min_length=2)
+    prenom: str = Field(..., min_length=2)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    telephone: Optional[str] = None
 
 
 class DatabaseSetupInput(BaseModel):
@@ -38,6 +38,7 @@ class SetupStatusResponse(BaseModel):
     is_configured: bool
     etablissement_nom: Optional[str] = None
     etablissement_code: Optional[str] = None
+    devise: Optional[str] = None
     version: str = "1.0.0"
     tenant_mode: str = "standalone"
     database_connected: bool = False
@@ -48,7 +49,6 @@ class SetupInitRequest(BaseModel):
     etablissement: EtablissementSetupInput
     admin: AdminSetupInput
     database: Optional[DatabaseSetupInput] = None
-    init_default_academic_session: bool = True
 
 
 class SetupInitResponse(BaseModel):

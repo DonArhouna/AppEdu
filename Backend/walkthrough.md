@@ -31,7 +31,7 @@ Le développement du socle backend pour **EduManagePro (EMP)** a été réalisé
 
 ## 3. Modèles ORM & Migrations Alembic (Brique 2)
 - Modèles SQLAlchemy 2.0 avec typage `Mapped[...]` et `TimestampMixin` :
-  - [app/models/etablissement.py](file:///c:/Users/RHONE/OneDrive/Desktop/AppEdu/Backend/app/models/etablissement.py) : Identité de l'établissement, devise (FCFA), clé de licence, état `is_configured`.
+  - [app/models/etablissement.py](file:///c:/Users/RHONE/OneDrive/Desktop/AppEdu/Backend/app/models/etablissement.py) : identité de l'établissement, devise configurée, clé de licence, état `is_configured`.
   - [app/models/utilisateur.py](file:///c:/Users/RHONE/OneDrive/Desktop/AppEdu/Backend/app/models/utilisateur.py) : Comptes, mots de passe hachés, statut, et rôles RBAC (`ADMIN`, `DIRECTEUR_ETUDES`, etc.).
   - [app/models/session_academique.py](file:///c:/Users/RHONE/OneDrive/Desktop/AppEdu/Backend/app/models/session_academique.py) : Sessions annuelles et tranches/périodes de paiement ordonnées (relation 1-N en cascade).
   - [app/models/etudiant.py](file:///c:/Users/RHONE/OneDrive/Desktop/AppEdu/Backend/app/models/etudiant.py) : Étudiants rattachés dynamiquement à une session académique (`session_id`).
@@ -52,10 +52,11 @@ Le développement du socle backend pour **EduManagePro (EMP)** a été réalisé
 - **Points d'entrée REST v1** ([app/api/v1/endpoints/](file:///c:/Users/RHONE/OneDrive/Desktop/AppEdu/Backend/app/api/v1/endpoints/)) :
   - **Setup Wizard** (`/api/v1/setup`) :
     - `GET /status` : indique au frontend si l'instance doit afficher `/setup` ou `/login`.
-    - `POST /initialize` : création de l'établissement, du SuperAdmin et de la session 2025-2026 avec 10 tranches mensuelles.
+    - `POST /initialize` : création de l'établissement et du compte SuperAdmin ; les données métier sont saisies ensuite via les modules API.
   - **Authentification** (`/api/v1/auth`) :
     - `POST /login` : authentification et émission du Bearer JWT.
     - `GET /me` : profil de l'utilisateur connecté.
+     - `PATCH /me` et `POST /me/password` : mise à jour des coordonnées et du mot de passe.
   - **Sessions & Périodes de Paiement** (`/api/v1/sessions`) :
     - `GET /` & `GET /active` : récupération des sessions et des calendriers d'échéances.
     - `POST /` : création de sessions personnalisées.

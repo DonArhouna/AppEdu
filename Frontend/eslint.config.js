@@ -23,4 +23,17 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
+  {
+    // Les primitives shadcn et les contextes exposent volontairement des
+    // variantes/hooks avec leurs composants ; ce avertissement Fast Refresh
+    // n'indique pas une erreur runtime.
+    files: [
+      "src/components/ui/**/*.{ts,tsx}",
+      "src/components/layout/SidebarNew.tsx",
+      "src/contexts/**/*.{ts,tsx}",
+    ],
+    rules: {
+      "react-refresh/only-export-components": "off",
+    },
+  },
 );

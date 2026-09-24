@@ -1,143 +1,45 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { AlertCircle, ArrowLeft, BookOpen, Clock, Loader2, RefreshCw } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, BookOpen, Clock, Award, Users } from "lucide-react";
+import { structureApi, extractErrorMessage } from "@/services/apiClient";
+import type { Matiere, TeachingUnit } from "@/services/apiTypes";
 
-export default function MatiereDetail() {
-  const { id } = useParams();
+const MatiereDetail = () => {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [matiere, setMatiere] = useState<Matiere | null>(null);
+  const [parent, setParent] = useState<TeachingUnit | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const matiere = {
-    id: id || "1",
-    code: "INF301",
-    nom: "Programmation Web",
-    type: "UE",
-    credits: 6,
-    coefficient: 3,
-    heures: 45,
-    filiere: "Informatique",
-    niveau: "L3",
-    semestre: "S5",
-    enseignant: "Mamadou Diallo",
-    description: "Ce cours couvre les technologies web modernes incluant HTML5, CSS3, JavaScript et les frameworks populaires.",
-    prerequis: ["Algorithmique", "Programmation orientée objet"],
-    objectifs: [
-      "Maîtriser les langages web fondamentaux",
-      "Développer des applications web interactives",
-      "Comprendre les architectures client-serveur",
-    ],
-    etudiants: 35,
-  };
+  const load = useCallback(async () => {
+    if (!id) return;
+    setLoading(true); setError(null);
+    const result = await structureApi.getMatiereById(id);
+    if (result.error || !result.data) {
+      setError(result.error || "Matière introuvable.");
+    } else {
+      setMatiere(result.data);
+      setParent(null);
+      if (result.data.ue_id) {
+        const ueResult = await structureApi.getUEById(result.data.ue_id);
+        if (ueResult.data) setParent(ueResult.data);
+      }
+    }
+    setLoading(false);
+  }, [id]);
+  useEffect(() => { void load(); }, [load]);
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/matieres")}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold text-foreground">{matiere.nom}</h1>
-            <Badge className="bg-primary text-primary-foreground">{matiere.type}</Badge>
-          </div>
-          <p className="text-muted-foreground">
-            {matiere.code} • {matiere.filiere} - {matiere.niveau} - {matiere.semestre}
-          </p>
-        </div>
-      </div>
+  if (loading) return <div className="flex items-center justify-center gap-2 p-16 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Chargement de la matière...</div>;
+  if (error || !matiere) return <div className="space-y-4"><Button variant="ghost" onClick={() => navigate("/matieres")}><ArrowLeft className="mr-2 h-4 w-4" />Retour</Button><Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Matière indisponible</AlertTitle><AlertDescription>{error || "Matière introuvable."}</AlertDescription><Button className="mt-3" variant="outline" size="sm" onClick={load}><RefreshCw className="mr-2 h-4 w-4" />Réessayer</Button></Alert></div>;
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <Card className="md:col-span-1">
-          <CardHeader>
-            <CardTitle>Informations</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <div className="text-sm font-medium text-muted-foreground">Code</div>
-              <div className="text-lg font-mono">{matiere.code}</div>
-            </div>
-            <Separator />
-            <div>
-              <div className="text-sm font-medium text-muted-foreground mb-2">Crédits</div>
-              <div className="flex items-center gap-2">
-                <Award className="h-4 w-4 text-primary" />
-                <span className="text-lg font-semibold">{matiere.credits} ECTS</span>
-              </div>
-            </div>
-            <Separator />
-            <div>
-              <div className="text-sm font-medium text-muted-foreground mb-2">Coefficient</div>
-              <div className="text-lg font-semibold">{matiere.coefficient}</div>
-            </div>
-            <Separator />
-            <div>
-              <div className="text-sm font-medium text-muted-foreground mb-2">Volume horaire</div>
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-secondary" />
-                <span className="text-lg font-semibold">{matiere.heures}h</span>
-              </div>
-            </div>
-            <Separator />
-            <div>
-              <div className="text-sm font-medium text-muted-foreground mb-2">Enseignant</div>
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-muted-foreground" />
-                <span>{matiere.enseignant}</span>
-              </div>
-            </div>
-            <Separator />
-            <div>
-              <div className="text-sm font-medium text-muted-foreground mb-2">Étudiants inscrits</div>
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                <span className="text-lg font-semibold">{matiere.etudiants}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+  const totalHours = matiere.heures_cm + matiere.heures_td + matiere.heures_tp;
+  return <div className="space-y-6"><div className="flex items-center gap-4"><Button variant="ghost" size="icon" onClick={() => navigate("/matieres")}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex items-center gap-3"><h1 className="text-3xl font-bold text-foreground">{matiere.nom}</h1><Badge>ECUE</Badge></div><p className="text-sm text-muted-foreground">{matiere.code}{parent ? ` • ${parent.nom}` : ""}</p></div></div><div className="grid gap-4 md:grid-cols-3"><Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Crédits</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{matiere.credits} ECTS</CardContent></Card><Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Coefficient</CardTitle></CardHeader><CardContent className="text-2xl font-bold">{matiere.coefficient}</CardContent></Card><Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Volume horaire</CardTitle><Clock className="h-4 w-4 text-muted-foreground" /></CardHeader><CardContent className="text-2xl font-bold">{totalHours}h</CardContent></Card></div><Card><CardHeader><CardTitle className="flex items-center gap-2"><BookOpen className="h-5 w-5 text-primary" />Informations persistées</CardTitle><CardDescription>Les valeurs ci-dessous proviennent de l'API.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 md:grid-cols-2"><div><span className="text-xs text-muted-foreground">UE parente</span><p>{parent?.nom || "Non renseignée"}</p></div><div><span className="text-xs text-muted-foreground">Filière</span><p>{parent?.filiere?.nom || "Non renseignée"}</p></div><div><span className="text-xs text-muted-foreground">Niveau</span><p>{parent?.niveau || "Non renseigné"}</p></div><div><span className="text-xs text-muted-foreground">Semestre</span><p>{parent?.semestre || "Non renseigné"}</p></div><div><span className="text-xs text-muted-foreground">Enseignant</span><p>{matiere.enseignant_nom || "Non assigné"}</p></div></div><Separator /><div><span className="text-xs text-muted-foreground">Description</span><p className="mt-1 text-sm">{matiere.description || "Aucune description fournie."}</p></div></CardContent></Card></div>;
+};
 
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>Description du cours</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div>
-              <h3 className="font-semibold mb-2">Présentation</h3>
-              <p className="text-muted-foreground">{matiere.description}</p>
-            </div>
-
-            <Separator />
-
-            <div>
-              <h3 className="font-semibold mb-3">Prérequis</h3>
-              <ul className="space-y-2">
-                {matiere.prerequis.map((prerequis, index) => (
-                  <li key={index} className="flex items-center gap-2">
-                    <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                    <span className="text-muted-foreground">{prerequis}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <Separator />
-
-            <div>
-              <h3 className="font-semibold mb-3">Objectifs pédagogiques</h3>
-              <ul className="space-y-2">
-                {matiere.objectifs.map((objectif, index) => (
-                  <li key={index} className="flex items-start gap-2">
-                    <div className="h-1.5 w-1.5 rounded-full bg-secondary mt-2" />
-                    <span className="text-muted-foreground">{objectif}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
+export default MatiereDetail;

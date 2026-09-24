@@ -10,7 +10,7 @@ from pydantic import BaseModel, EmailStr, ConfigDict, Field
 class EtudiantBase(BaseModel):
     nom: str = Field(..., example="Dupont")
     prenom: str = Field(..., example="Marie")
-    sexe: Optional[str] = Field("F", example="F")
+    sexe: Optional[str] = None
     email: Optional[EmailStr] = Field(None, example="marie.dupont@email.com")
     telephone: Optional[str] = Field(None, example="+225 07 00 00 00")
     date_naissance: Optional[date] = None
@@ -18,7 +18,7 @@ class EtudiantBase(BaseModel):
     filiere: str = Field(..., example="Génie Logiciel")
     filiere_id: Optional[str] = None
     niveau: str = Field(..., example="Licence 3")
-    statut: str = Field("Inscrit", example="Inscrit")
+    statut: str
     photo_url: Optional[str] = None
     date_inscription: Optional[date] = None
     session_id: Optional[str] = None
@@ -28,7 +28,7 @@ class EtudiantCreate(BaseModel):
     matricule: Optional[str] = Field(None, example="2026-GL-0042")
     nom: str = Field(..., example="Dupont")
     prenom: str = Field(..., example="Marie")
-    sexe: Optional[str] = Field("F", example="F")
+    sexe: Optional[str] = None
     email: Optional[EmailStr] = Field(None, example="marie.dupont@email.com")
     telephone: Optional[str] = Field(None, example="+225 07 00 00 00")
     date_naissance: Optional[date] = None
@@ -36,7 +36,7 @@ class EtudiantCreate(BaseModel):
     filiere: str = Field(..., example="Génie Logiciel")
     filiere_id: Optional[str] = None
     niveau: str = Field(..., example="Licence 3")
-    statut: str = Field("Inscrit", example="Inscrit")
+    statut: str
     photo_url: Optional[str] = None
     date_inscription: Optional[date] = None
     session_id: Optional[str] = None
@@ -59,7 +59,7 @@ class EtudiantUpdate(BaseModel):
 
 
 class EtudiantInscriptionRequest(BaseModel):
-    session_id: str = Field(..., example="session-2025-2026")
+    session_id: str
     filiere_id: Optional[str] = None
     filiere: Optional[str] = None
     niveau: Optional[str] = None

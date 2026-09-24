@@ -28,7 +28,7 @@ class Cours(Base, TimestampMixin):
     jour_semaine: Mapped[str] = mapped_column(String(20), nullable=False)  # Lundi..Samedi
     heure_debut: Mapped[str] = mapped_column(String(10), nullable=False)   # "08:00"
     heure_fin: Mapped[str] = mapped_column(String(10), nullable=False)     # "10:00"
-    type_cours: Mapped[str] = mapped_column(String(20), nullable=False, default="CM")  # CM, TD, TP
+    type_cours: Mapped[str] = mapped_column(String(20), nullable=False)  # CM, TD, TP
 
     matiere: Mapped["Matiere"] = relationship("Matiere", lazy="selectin")
 
@@ -50,7 +50,7 @@ class Examen(Base, TimestampMixin):
     type_examen: Mapped[str] = mapped_column(String(50), nullable=False, default="Examen Final")  # CC, Partiel, Examen Final, Rattrapage
     date_examen: Mapped[date] = mapped_column(Date, nullable=False)
     duree_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=120)
-    coefficient: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    coefficient: Mapped[float] = mapped_column(Float, nullable=False)
 
     matiere: Mapped["Matiere"] = relationship("Matiere", lazy="selectin")
     session: Mapped["SessionAcademique"] = relationship("SessionAcademique", lazy="selectin")
@@ -76,7 +76,7 @@ class Note(Base, TimestampMixin):
         String(50), ForeignKey("sessions_academiques.id", ondelete="SET NULL"), nullable=True, index=True
     )
     valeur: Mapped[float] = mapped_column(Float, nullable=False)  # Note sur 20
-    coefficient: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    coefficient: Mapped[float] = mapped_column(Float, nullable=False)
     appreciation: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     statut: Mapped[str] = mapped_column(String(30), nullable=False, default="Validé")  # Validé, Rattrapage
     saisi_par_id: Mapped[Optional[int]] = mapped_column(
@@ -104,8 +104,8 @@ class Absence(Base, TimestampMixin):
         String(50), ForeignKey("matieres.id", ondelete="SET NULL"), nullable=True, index=True
     )
     date_absence: Mapped[date] = mapped_column(Date, nullable=False)
-    duree_heures: Mapped[float] = mapped_column(Float, nullable=False, default=2.0)
-    justifiee: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    duree_heures: Mapped[float] = mapped_column(Float, nullable=False)
+    justifiee: Mapped[bool] = mapped_column(Boolean, nullable=False)
     motif: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     etudiant: Mapped["Etudiant"] = relationship("Etudiant", lazy="selectin")

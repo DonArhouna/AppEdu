@@ -18,7 +18,7 @@ class Etudiant(Base, TimestampMixin):
     matricule: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     nom: Mapped[str] = mapped_column(String(100), nullable=False)
     prenom: Mapped[str] = mapped_column(String(100), nullable=False)
-    sexe: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, default="M")
+    sexe: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, index=True, nullable=True)
     telephone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     date_naissance: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
@@ -30,7 +30,7 @@ class Etudiant(Base, TimestampMixin):
         String(50), ForeignKey("filieres.id", ondelete="SET NULL"), nullable=True, index=True
     )
     niveau: Mapped[str] = mapped_column(String(50), nullable=False)
-    statut: Mapped[str] = mapped_column(String(30), nullable=False, default="Inscrit")
+    statut: Mapped[str] = mapped_column(String(30), nullable=False)
     photo_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     date_inscription: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 

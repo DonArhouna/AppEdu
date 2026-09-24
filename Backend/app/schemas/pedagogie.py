@@ -31,11 +31,22 @@ class CoursBase(BaseModel):
     jour_semaine: str = Field(..., example="Lundi")
     heure_debut: str = Field(..., example="08:00")
     heure_fin: str = Field(..., example="10:00")
-    type_cours: str = Field("CM", example="CM")
+    type_cours: str
 
 
 class CoursCreate(CoursBase):
     id: Optional[str] = None
+
+
+class CoursUpdate(BaseModel):
+    matiere_id: Optional[str] = None
+    enseignant_id: Optional[int] = None
+    enseignant_nom: Optional[str] = None
+    salle: Optional[str] = None
+    jour_semaine: Optional[str] = None
+    heure_debut: Optional[str] = None
+    heure_fin: Optional[str] = None
+    type_cours: Optional[str] = None
 
 
 class CoursResponse(CoursBase):
@@ -56,7 +67,7 @@ class ExamenBase(BaseModel):
     type_examen: str = Field("Examen Final", example="Examen Final")
     date_examen: date
     duree_minutes: int = Field(120, example=120)
-    coefficient: float = Field(1.0, example=1.0)
+    coefficient: float = Field(..., gt=0.0)
 
 
 class ExamenCreate(ExamenBase):
@@ -80,7 +91,7 @@ class NoteBase(BaseModel):
     examen_id: Optional[str] = None
     session_id: Optional[str] = None
     valeur: float = Field(..., ge=0.0, le=20.0, example=15.5)
-    coefficient: float = Field(1.0, example=1.0)
+    coefficient: float = Field(..., gt=0.0)
     appreciation: Optional[str] = None
     statut: str = Field("Validé", example="Validé")
 
@@ -92,7 +103,7 @@ class NoteCreate(NoteBase):
 class NoteBulkItem(BaseModel):
     etudiant_id: str
     valeur: float = Field(..., ge=0.0, le=20.0)
-    coefficient: float = 1.0
+    coefficient: float = Field(..., gt=0.0)
     appreciation: Optional[str] = None
 
 
@@ -101,6 +112,16 @@ class NoteBulkCreate(BaseModel):
     examen_id: Optional[str] = None
     session_id: Optional[str] = None
     notes: List[NoteBulkItem]
+
+
+class NoteUpdate(BaseModel):
+    matiere_id: Optional[str] = None
+    examen_id: Optional[str] = None
+    session_id: Optional[str] = None
+    valeur: Optional[float] = Field(None, ge=0.0, le=20.0)
+    coefficient: Optional[float] = Field(None, gt=0.0)
+    appreciation: Optional[str] = None
+    statut: Optional[str] = None
 
 
 class NoteResponse(NoteBase):
@@ -119,8 +140,8 @@ class AbsenceBase(BaseModel):
     cours_id: Optional[str] = None
     matiere_id: Optional[str] = None
     date_absence: date
-    duree_heures: float = Field(2.0, example=2.0)
-    justifiee: bool = Field(False, example=False)
+    duree_heures: float = Field(..., gt=0.0)
+    justifiee: bool
     motif: Optional[str] = None
 
 

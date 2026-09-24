@@ -16,10 +16,10 @@ class SessionAcademique(Base, TimestampMixin):
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
     nom: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
-    annee_academique: Mapped[str] = mapped_column(String(20), nullable=False, default="2025-2026")
+    annee_academique: Mapped[str] = mapped_column(String(20), nullable=False)
     date_debut: Mapped[date] = mapped_column(Date, nullable=False)
     date_fin: Mapped[date] = mapped_column(Date, nullable=False)
-    statut: Mapped[str] = mapped_column(String(20), nullable=False, default="active")  # active | planifiee | cloturee
+    statut: Mapped[str] = mapped_column(String(20), nullable=False)  # active | planifiee | cloturee
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relation 1-N vers les périodes de paiement
@@ -42,9 +42,9 @@ class PeriodePaiement(Base, TimestampMixin):
     nom: Mapped[str] = mapped_column(String(100), nullable=False)
     mois: Mapped[str] = mapped_column(String(30), nullable=False)
     date_echeance: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    montant_estime: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=0.0)
+    montant_estime: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pourcentage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    ordre: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    ordre: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Relation N-1 vers la session
     session: Mapped["SessionAcademique"] = relationship("SessionAcademique", back_populates="periodes")

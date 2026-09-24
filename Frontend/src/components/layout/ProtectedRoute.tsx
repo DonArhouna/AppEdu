@@ -1,24 +1,50 @@
-import React from "react";
-import { Link } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { useRBAC, type UserRole, AVAILABLE_ROLES } from "@/contexts/RBACContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShieldAlert, ArrowLeft, Lock } from "lucide-react";
+import { PageLoader } from "@/components/ui/page-loader";
+import { ArrowLeft, Lock } from "lucide-react";
 
 interface ProtectedRouteProps {
   allowedRoles?: UserRole[];
+  /** Désactive le bypass global de l'administrateur pour les portails personnels. */
+  allowSuperuser?: boolean;
   children: React.ReactNode;
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, children }) => {
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
+  allowedRoles,
+  allowSuperuser = true,
+  children,
+}) => {
+  const { user, isLoading } = useAuth();
   const { currentRole, currentRoleInfo, hasAccess } = useRBAC();
+  const navigate = useNavigate();
 
-  if (!allowedRoles || allowedRoles.length === 0 || hasAccess(allowedRoles)) {
+  useEffect(() => {
+    if (!isLoading && !user) {
+      navigate("/login", { replace: true });
+    }
+  }, [isLoading, navigate, user]);
+
+  if (isLoading || !user) {
+    return <PageLoader />;
+  }
+
+  const canAccess = allowSuperuser
+    ? (!allowedRoles || allowedRoles.length === 0 || hasAccess(allowedRoles))
+    : Boolean(allowedRoles?.includes(currentRole));
+
+  if (canAccess) {
     return <>{children}</>;
   }
 
-  const allowedRoleInfos = AVAILABLE_ROLES.filter((r) => allowedRoles.includes(r.id));
+  const allowedRoleInfos = AVAILABLE_ROLES.filter((role) =>
+    allowedRoles?.includes(role.id)
+  );
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center p-4">
@@ -29,20 +55,22 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-xl font-bold text-foreground">Accès Réservé / Non Autorisé</h2>
+            <h2 className="text-xl font-bold text-foreground">Accès réservé / Non autorisé</h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Votre profil actuel (<strong className="text-foreground">{currentRoleInfo.label}</strong>) ne dispose pas des privilèges nécessaires pour accéder à cette ressource.
+              Votre profil (
+              <strong className="text-foreground">{currentRoleInfo.label}</strong>) ne dispose pas
+              des privilèges nécessaires pour accéder à cette ressource.
             </p>
           </div>
 
           <div className="p-3 bg-muted/50 rounded-lg border text-xs space-y-2 text-left">
             <p className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wider">
-              Profils autorisés pour ce module :
+              Profils autorisés pour ce module
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {allowedRoleInfos.map((r) => (
-                <Badge key={r.id} variant="secondary" className="text-[11px] font-medium">
-                  {r.label}
+              {allowedRoleInfos.map((role) => (
+                <Badge key={role.id} variant="secondary" className="text-[11px] font-medium">
+                  {role.label}
                 </Badge>
               ))}
             </div>

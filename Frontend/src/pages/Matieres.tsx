@@ -13,6 +13,7 @@ import { Plus, Search, Eye, Pencil, Trash2, BookOpen, AlertCircle, RefreshCw } f
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { structureApi, extractErrorMessage } from "@/services/apiClient";
+import type { Matiere as MatiereApi, TeachingUnit } from "@/services/apiTypes";
 
 interface Matiere {
   id: string;
@@ -22,17 +23,21 @@ interface Matiere {
   credits: number;
   coefficient: number;
   heures: number;
+  heures_cm: number;
+  heures_td: number;
+  heures_tp: number;
   filiere: string;
   niveau: string;
   semestre: string;
   enseignant?: string;
   ue_id?: string;
+  ueId?: string;
 }
 
 export default function Matieres() {
   const navigate = useNavigate();
   const [matieres, setMatieres] = useState<Matiere[]>([]);
-  const [ues, setUes] = useState<any[]>([]);
+  const [ues, setUes] = useState<TeachingUnit[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMatiere, setSelectedMatiere] = useState<Matiere | null>(null);
@@ -49,8 +54,11 @@ export default function Matieres() {
         structureApi.getMatieres(),
         structureApi.getUEs(),
       ]);
-      setUes(uList || []);
-      const mapped: Matiere[] = (mList || []).map((m: any) => {
+      if (mList.error || uList.error) {
+        throw new Error(mList.error || uList.error || "Impossible de charger les matières.");
+      }
+      setUes(uList.data || []);
+      const mapped: Matiere[] = (mList.data || []).map((m: MatiereApi) => {
         const totalH = (Number(m.heures_cm) || 0) + (Number(m.heures_td) || 0) + (Number(m.heures_tp) || 0);
         return {
           id: m.id,
@@ -59,16 +67,19 @@ export default function Matieres() {
           type: "ECUE" as const,
           credits: m.credits ?? 3,
           coefficient: m.coefficient ?? 1.5,
-          heures: totalH > 0 ? totalH : 45,
-          filiere: m.ue?.filiere?.nom || "Tronc Commun",
-          niveau: m.ue?.niveau || "Licence",
-          semestre: m.ue?.semestre || "S1",
-          enseignant: m.enseignant_nom || "Non assigné",
+          heures: totalH,
+          heures_cm: Number(m.heures_cm) || 0,
+          heures_td: Number(m.heures_td) || 0,
+          heures_tp: Number(m.heures_tp) || 0,
+          filiere: m.ue?.filiere?.nom || "",
+          niveau: m.ue?.niveau || "",
+          semestre: m.ue?.semestre || "",
+          enseignant: m.enseignant_nom || "",
           ue_id: m.ue_id,
         };
       });
       setMatieres(mapped);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(extractErrorMessage(err));
     } finally {
       setLoading(false);
@@ -92,26 +103,30 @@ export default function Matieres() {
         await structureApi.updateMatiere(selectedMatiere.id, {
           nom: data.nom,
           code: data.code,
-          credits: Number(data.credits || 3),
-          coefficient: Number(data.coefficient || 1.5),
-          heures_cm: Number(data.heures ? Math.round(data.heures * 0.4) : 20),
-          heures_td: Number(data.heures ? Math.round(data.heures * 0.3) : 15),
-          heures_tp: Number(data.heures ? Math.round(data.heures * 0.3) : 10),
-          enseignant_nom: data.enseignant,
-          ue_id: (data as any).ueId || selectedMatiere.ue_id,
+          credits: Number(data.credits),
+          coefficient: Number(data.coefficient),
+          heures_cm: Number(data.heures_cm || 0),
+          heures_td: Number(data.heures_td || 0),
+          heures_tp: Number(data.heures_tp || 0),
+          enseignant_nom: data.enseignant || "",
+          ue_id: data.ueId || selectedMatiere.ue_id,
         });
         toast.success("Matière mise à jour avec succès");
       } else {
-        const ueId = (data as any).ueId || (ues.length > 0 ? ues[0].id : "UE-01");
+        const ueId = data.ueId;
+        if (!ueId) {
+          toast.error("Sélectionnez l'UE parente de la matière.");
+          return;
+        }
         await structureApi.createMatiere({
           nom: data.nom,
           code: data.code,
-          credits: Number(data.credits || 3),
-          coefficient: Number(data.coefficient || 1.5),
-          heures_cm: Number(data.heures ? Math.round(data.heures * 0.4) : 20),
-          heures_td: Number(data.heures ? Math.round(data.heures * 0.3) : 15),
-          heures_tp: Number(data.heures ? Math.round(data.heures * 0.3) : 10),
-          enseignant_nom: data.enseignant,
+          credits: Number(data.credits),
+          coefficient: Number(data.coefficient),
+          heures_cm: Number(data.heures_cm || 0),
+          heures_td: Number(data.heures_td || 0),
+          heures_tp: Number(data.heures_tp || 0),
+          enseignant_nom: data.enseignant || "",
           ue_id: ueId,
         });
         toast.success("Matière créée avec succès");
@@ -119,7 +134,7 @@ export default function Matieres() {
       setDialogOpen(false);
       setSelectedMatiere(null);
       fetchData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(extractErrorMessage(err));
     }
   };
@@ -142,7 +157,7 @@ export default function Matieres() {
       setDeleteDialogOpen(false);
       setMatiereToDelete(null);
       fetchData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(extractErrorMessage(err));
     }
   };
@@ -291,7 +306,7 @@ export default function Matieres() {
         onOpenChange={setDialogOpen}
         onSave={handleSaveMatiere}
         matiere={selectedMatiere}
-        ues={ues}
+        ues={ues.map((ue) => ({ id: ue.id, code: ue.code, nom: ue.nom, filiere: ue.filiere?.nom || "", niveau: ue.niveau, semestre: ue.semestre }))}
       />
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

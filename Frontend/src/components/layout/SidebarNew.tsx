@@ -3,9 +3,9 @@ import { Link, useLocation } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import {
   LayoutDashboard, UserPlus, Users, FileCheck, GraduationCap,
-  BookOpen, Building2, MapPin, Building, UserCog, BookMarked,
-  CalendarDays, FileText, FolderOpen, ClipboardCheck, ChevronDown,
-  DollarSign, CreditCard, TrendingUp, Mail, BarChart3, School,
+  BookOpen, Building2, MapPin, UserCog, BookMarked,
+  CalendarDays, FileText, ClipboardCheck, ChevronDown,
+  DollarSign, CreditCard, TrendingUp, BarChart3, School,
   Briefcase, Wallet, UserCircle, Settings, Search, X, Sliders,
   ShieldCheck, Sparkles, Layers, ChevronLeft, ChevronRight,
 } from "lucide-react";
@@ -58,8 +58,6 @@ export const navigationSections: NavigationSection[] = [
     allowedRoles: ["ADMIN", "DIRECTEUR_ETUDES"],
     items: [
       { title: "Campus", icon: MapPin, href: "/campus", description: "Gestion multi-campus et implantations" },
-      { title: "Sites & Bâtiments", icon: Building, href: "/sites", description: "Sites physiques et infrastructures" },
-      { title: "Salles de cours", icon: Layers, href: "/salles", description: "Amphithéâtres, labos et capacités" },
       { title: "Départements", icon: Building2, href: "/departements", description: "Unités académiques et facultés" },
       { title: "Filières & Cursus", icon: BookOpen, href: "/filieres", description: "Programmes de formation et diplômes" },
       { title: "Promotions & Cohortes", icon: GraduationCap, href: "/promotions", description: "Sessions et années d'études" },
@@ -76,10 +74,9 @@ export const navigationSections: NavigationSection[] = [
     bgLightClass: "bg-sky-500/10",
     allowedRoles: ["ADMIN", "SECRETARIAT", "DIRECTEUR_ETUDES"],
     items: [
-      { title: "Pré-inscriptions", icon: UserPlus, href: "/pre-inscription", badge: "Nouveau", badgeVariant: "warning", description: "Candidatures en ligne et prospects" },
-      { title: "Validation dossiers", icon: FileCheck, href: "/validation", badge: "À valider", badgeVariant: "destructive", description: "Commissions d'admission et pièces" },
+      { title: "Pré-inscriptions", icon: UserPlus, href: "/pre-inscription", description: "Candidatures persistées et suivi des dossiers" },
+      { title: "Validation dossiers", icon: FileCheck, href: "/validation", description: "Pièces, décisions et conversion étudiants" },
       { title: "Registre Étudiants", icon: Users, href: "/etudiants", description: "Dossiers scolaires et fiches individuelles" },
-      { title: "Vérif. Documents", icon: ShieldCheck, href: "/verifier-document", description: "Authentification des diplômes & QR code" },
     ],
   },
   {
@@ -93,7 +90,6 @@ export const navigationSections: NavigationSection[] = [
       { title: "Emplois du Temps", icon: CalendarDays, href: "/emplois-du-temps", description: "Plannings hebdomadaires et réservations" },
       { title: "Carnet de Notes", icon: FileText, href: "/notes", description: "Saisie des notes, CC et examens" },
       { title: "Suivi des Absences", icon: ClipboardCheck, href: "/absences", description: "Appels de classe et assiduité" },
-      { title: "Ressources Pédag.", icon: FolderOpen, href: "/ressources", description: "Supports de cours et syllabus" },
     ],
   },
   {
@@ -106,7 +102,7 @@ export const navigationSections: NavigationSection[] = [
     items: [
       { title: "Enseignants", icon: GraduationCap, href: "/enseignants", description: "Corps professoral, vacataires et titulaires", allowedRoles: ["ADMIN", "SECRETARIAT"] },
       { title: "Personnel & RH", icon: UserCog, href: "/personnel", description: "Personnel administratif et technique", allowedRoles: ["ADMIN", "SECRETARIAT"] },
-      { title: "Portail Enseignant", icon: GraduationCap, href: "/portail-enseignant", description: "Espace réservé aux professeurs", allowedRoles: ["ADMIN", "ENSEIGNANT"] },
+      { title: "Portail Enseignant", icon: GraduationCap, href: "/portail-enseignant", description: "Espace réservé aux professeurs", allowedRoles: ["ENSEIGNANT"] },
     ],
   },
   {
@@ -131,8 +127,7 @@ export const navigationSections: NavigationSection[] = [
     bgLightClass: "bg-teal-500/10",
     allowedRoles: ["ADMIN", "ETUDIANT", "ENSEIGNANT", "SECRETARIAT"],
     items: [
-      { title: "Espace Étudiant", icon: UserCircle, href: "/espace-etudiant", description: "Portail self-service étudiant", allowedRoles: ["ADMIN", "ETUDIANT"] },
-      { title: "Messagerie interne", icon: Mail, href: "/messagerie", description: "Communications internes et avis" },
+      { title: "Espace Étudiant", icon: UserCircle, href: "/espace-etudiant", description: "Portail self-service étudiant", allowedRoles: ["ETUDIANT"] },
     ],
   },
   {
@@ -156,7 +151,6 @@ export const navigationSections: NavigationSection[] = [
     items: [
       { title: "Comptes Utilisateurs", icon: Users, href: "/utilisateurs", description: "Accès au système et annuaire" },
       { title: "Rôles & Permissions", icon: ShieldCheck, href: "/roles-permissions", description: "Matrice de sécurité RBAC" },
-      { title: "Journal d'Audit", icon: ShieldCheck, href: "/journal-audit", description: "Traçabilité et conformité RGPD" },
       { title: "Paramétrage Général", icon: Sliders, href: "/parametrage", description: "Configuration de l'établissement" },
     ],
   },
@@ -201,6 +195,19 @@ export const Sidebar = ({
   });
 
   // Keep active section open when route changes
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    const previousFocus = document.activeElement as HTMLElement | null;
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      previousFocus?.focus();
+    };
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     accessibleSections.forEach((mod) => {
       const active = mod.items.some(
@@ -345,7 +352,7 @@ export const Sidebar = ({
         className={cn(
           "fixed left-0 top-0 h-screen z-50 flex flex-col",
           "transition-all duration-300 ease-in-out",
-          isCollapsed ? "w-[76px]" : "w-[270px]",
+          isCollapsed ? "w-[270px] md:w-[76px]" : "w-[270px]",
           isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >

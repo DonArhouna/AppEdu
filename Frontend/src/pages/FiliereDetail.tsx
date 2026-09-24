@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { structureApi } from "@/services/apiClient";
+import type { Filiere } from "@/services/apiTypes";
 
 export default function FiliereDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [filiere, setFiliere] = useState<any>(null);
+  const [filiere, setFiliere] = useState<Filiere | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,15 +24,15 @@ export default function FiliereDetail() {
         if (res.error) {
           setError(res.error);
         } else {
-          const found = (res.data || []).find((f: any) => f.id === id);
+          const found = (res.data || []).find((f) => f.id === id);
           if (found) {
             setFiliere(found);
           } else {
             setError("Filière non trouvée dans la base de données.");
           }
         }
-      } catch (err: any) {
-        setError(err?.message || "Erreur de connexion.");
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Erreur de connexion.");
       } finally {
         setLoading(false);
       }
@@ -91,7 +92,7 @@ export default function FiliereDetail() {
             <GraduationCap className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{filiere.diplome || "Licence"}</div>
+            <div className="text-2xl font-bold">{filiere.diplome || "Non renseigné"}</div>
             <p className="text-xs text-muted-foreground">Cycle de formation</p>
           </CardContent>
         </Card>

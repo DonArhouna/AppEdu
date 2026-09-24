@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -6,191 +7,145 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { etudiantsApi } from "@/services/apiClient";
+import type { Student, User } from "@/services/apiTypes";
+
+export interface UserFormData {
+  nom: string;
+  prenom: string;
+  email: string;
+  telephone: string;
+  role: string;
+  is_active: boolean;
+  etudiant_id: string;
+  password?: string;
+}
+
+type EditableUser = Pick<User, "id" | "email" | "nom" | "prenom" | "telephone" | "role" | "is_active"> & Partial<User>;
 
 interface UserDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  userToEdit?: any;
+  userToEdit?: EditableUser;
+  onSave: (data: UserFormData) => Promise<void> | void;
 }
 
-export const UserDialog = ({ open, onOpenChange, userToEdit }: UserDialogProps) => {
-  const [formData, setFormData] = useState({
-    nom: userToEdit?.nom || "",
-    prenom: userToEdit?.prenom || "",
-    email: userToEdit?.email || "",
-    telephone: userToEdit?.telephone || "",
-    role: userToEdit?.role || "Enseignant",
-    departement: userToEdit?.departement || "Informatique",
-    statut: userToEdit?.statut || "Actif",
-    sendWelcomeEmail: true,
-  });
+const emptyForm: UserFormData = {
+  nom: "",
+  prenom: "",
+  email: "",
+  telephone: "",
+  role: "ENSEIGNANT",
+  is_active: true,
+  etudiant_id: "",
+  password: "",
+};
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (userToEdit) {
-      toast.success(`L'utilisateur ${formData.prenom} ${formData.nom} a été mis à jour.`);
-    } else {
-      toast.success(`L'utilisateur ${formData.prenom} ${formData.nom} a été créé avec succès.`);
+export const UserDialog = ({ open, onOpenChange, userToEdit, onSave }: UserDialogProps) => {
+  const [formData, setFormData] = useState<UserFormData>(emptyForm);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setFormData(
+      userToEdit
+        ? {
+            nom: userToEdit.nom || "",
+            prenom: userToEdit.prenom || "",
+            email: userToEdit.email || "",
+            telephone: userToEdit.telephone || "",
+            role: userToEdit.role || "ENSEIGNANT",
+            is_active: Boolean(userToEdit.is_active),
+            etudiant_id: userToEdit.etudiant_id || "",
+            password: "",
+          }
+        : emptyForm
+    );
+  }, [open, userToEdit]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    const loadStudents = async () => {
+      const result = await etudiantsApi.getAll();
+      if (active) setStudents(result.data || []);
+    };
+    void loadStudents();
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!userToEdit && (!formData.password || formData.password.length < 8)) {
+      return;
     }
-    onOpenChange(false);
+    setSaving(true);
+    try {
+      await onSave(formData);
+      onOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[550px]">
         <DialogHeader>
-          <DialogTitle>
-            {userToEdit ? "Modifier l'utilisateur" : "Créer un nouvel utilisateur"}
-          </DialogTitle>
+          <DialogTitle>{userToEdit ? "Modifier l'utilisateur" : "Créer un utilisateur"}</DialogTitle>
           <DialogDescription>
-            {userToEdit
-              ? "Mettez à jour les informations et permissions de cet utilisateur."
-              : "Renseignez les informations pour créer un accès au système EduManagePro."}
+            Les données et permissions sont enregistrées par le backend.
           </DialogDescription>
         </DialogHeader>
-
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="prenom">Prénom *</Label>
-              <Input
-                id="prenom"
-                required
-                value={formData.prenom}
-                onChange={(e) => setFormData({ ...formData, prenom: e.target.value })}
-                placeholder="Ex: Jean"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="nom">Nom *</Label>
-              <Input
-                id="nom"
-                required
-                value={formData.nom}
-                onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                placeholder="Ex: Dupont"
-              />
-            </div>
+            <div className="space-y-2"><Label htmlFor="user-prenom">Prénom *</Label><Input id="user-prenom" required value={formData.prenom} onChange={(event) => setFormData({ ...formData, prenom: event.target.value })} /></div>
+            <div className="space-y-2"><Label htmlFor="user-nom">Nom *</Label><Input id="user-nom" required value={formData.nom} onChange={(event) => setFormData({ ...formData, nom: event.target.value })} /></div>
           </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="email">Adresse Email Pro *</Label>
-            <Input
-              id="email"
-              type="email"
-              required
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="j.dupont@univ-edumanage.com"
-            />
-          </div>
-
+          <div className="space-y-2"><Label htmlFor="user-email">Email *</Label><Input id="user-email" type="email" required value={formData.email} onChange={(event) => setFormData({ ...formData, email: event.target.value })} disabled={Boolean(userToEdit)} /></div>
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="telephone">Téléphone</Label>
-              <Input
-                id="telephone"
-                value={formData.telephone}
-                onChange={(e) => setFormData({ ...formData, telephone: e.target.value })}
-                placeholder="+33 6 12 34 56 78"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="role">Rôle Système *</Label>
-              <Select
-                value={formData.role}
-                onValueChange={(val) => setFormData({ ...formData, role: val })}
-              >
-                <SelectTrigger id="role">
-                  <SelectValue placeholder="Sélectionnez un rôle" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Administrateur">Administrateur</SelectItem>
-                  <SelectItem value="Secrétariat">Secrétariat / Scolarité</SelectItem>
-                  <SelectItem value="Enseignant">Enseignant / Intervenant</SelectItem>
-                  <SelectItem value="Comptable">Comptable / Agent Financier</SelectItem>
-                  <SelectItem value="Étudiant">Étudiant</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <div className="space-y-2"><Label htmlFor="user-telephone">Téléphone</Label><Input id="user-telephone" value={formData.telephone} onChange={(event) => setFormData({ ...formData, telephone: event.target.value })} /></div>
+            <div className="space-y-2"><Label htmlFor="user-role">Rôle *</Label><Select value={formData.role} onValueChange={(value) => setFormData({ ...formData, role: value })}><SelectTrigger id="user-role"><SelectValue /></SelectTrigger><SelectContent>
+              <SelectItem value="ADMIN">Administrateur</SelectItem><SelectItem value="DIRECTEUR_ETUDES">Directeur des études</SelectItem><SelectItem value="SECRETARIAT">Secrétariat</SelectItem><SelectItem value="COMPTABILITE">Comptabilité</SelectItem><SelectItem value="ENSEIGNANT">Enseignant</SelectItem><SelectItem value="ETUDIANT">Étudiant</SelectItem>
+            </SelectContent></Select></div>
           </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="departement">Rattachement / Département</Label>
-              <Select
-                value={formData.departement}
-                onValueChange={(val) => setFormData({ ...formData, departement: val })}
-              >
-                <SelectTrigger id="departement">
-                  <SelectValue placeholder="Département" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Informatique">Informatique & Tech</SelectItem>
-                  <SelectItem value="Gestion">Gestion & Finance</SelectItem>
-                  <SelectItem value="Commerce">Commerce & Marketing</SelectItem>
-                  <SelectItem value="Direction">Direction Générale</SelectItem>
-                  <SelectItem value="Aucun">Aucun (Global)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="statut">Statut du compte</Label>
-              <Select
-                value={formData.statut}
-                onValueChange={(val) => setFormData({ ...formData, statut: val })}
-              >
-                <SelectTrigger id="statut">
-                  <SelectValue placeholder="Statut" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Actif">Actif</SelectItem>
-                  <SelectItem value="En attente">En attente d'activation</SelectItem>
-                  <SelectItem value="Inactif">Inactif / Suspendu</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {!userToEdit && (
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium">Envoyer une invitation par email</Label>
-                <p className="text-xs text-muted-foreground">
-                  L'utilisateur recevra un lien sécurisé pour définir son mot de passe.
-                </p>
-              </div>
-              <Switch
-                checked={formData.sendWelcomeEmail}
-                onCheckedChange={(val) => setFormData({ ...formData, sendWelcomeEmail: val })}
-              />
-            </div>
-          )}
-
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Annuler
-            </Button>
-            <Button type="submit">
-              {userToEdit ? "Enregistrer les modifications" : "Créer l'utilisateur"}
-            </Button>
-          </div>
+          {formData.role === "ETUDIANT" && (
+             <div className="space-y-2">
+               <Label htmlFor="user-etudiant">Dossier étudiant lié</Label>
+               <Select
+                 value={formData.etudiant_id || "none"}
+                 onValueChange={(value) => setFormData({ ...formData, etudiant_id: value === "none" ? "" : value })}
+               >
+                 <SelectTrigger id="user-etudiant">
+                   <SelectValue placeholder="Sélectionner un dossier" />
+                 </SelectTrigger>
+                 <SelectContent>
+                   <SelectItem value="none">Aucun dossier lié</SelectItem>
+                   {students.map((student) => (
+                     <SelectItem key={student.id} value={student.id}>
+                       {student.matricule} — {student.prenom} {student.nom}
+                     </SelectItem>
+                   ))}
+                 </SelectContent>
+               </Select>
+               <p className="text-xs text-muted-foreground">
+                 Un lien explicite est recommandé pour le portail auto-service étudiant.
+               </p>
+             </div>
+           )}
+           <div className="space-y-2"><Label htmlFor="user-status">Statut</Label><Select value={formData.is_active ? "active" : "inactive"} onValueChange={(value) => setFormData({ ...formData, is_active: value === "active" })}><SelectTrigger id="user-status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Actif</SelectItem><SelectItem value="inactive">Inactif</SelectItem></SelectContent></Select></div>
+          <div className="space-y-2"><Label htmlFor="user-password">{userToEdit ? "Nouveau mot de passe (optionnel)" : "Mot de passe *"}</Label><Input id="user-password" type="password" minLength={userToEdit ? 0 : 8} required={!userToEdit} value={formData.password} onChange={(event) => setFormData({ ...formData, password: event.target.value })} /></div>
+          <div className="flex justify-end gap-3 border-t pt-4"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button><Button type="submit" disabled={saving}>{saving ? "Enregistrement..." : userToEdit ? "Enregistrer" : "Créer"}</Button></div>
         </form>
       </DialogContent>
     </Dialog>
   );
 };
+
+export default UserDialog;

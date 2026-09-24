@@ -35,7 +35,7 @@ export interface EtudiantDeliberation {
 
 export interface DeliberationConfig {
   seuilValidationMoyenne: number; // Default 10.0
-  seuilEliminatoire: number; // Default 7.0 (any grade < 7 triggers failure/rattrapage)
+  seuilEliminatoire: number; // Seuil 7.0 : une note inférieure déclenche un rattrapage
   seuilPassageConditionnelECTS: number; // Default 18 ECTS out of 30
   compensationAutorisee: boolean; // Default true (inter-UE compensation if sem average >= 10)
 }
@@ -47,23 +47,25 @@ export const DEFAULT_DELIBERATION_CONFIG: DeliberationConfig = {
   compensationAutorisee: true,
 };
 
+export interface DeliberationStudentInput {
+  id: string;
+  matricule: string;
+  nom: string;
+  prenom: string;
+  filiere: string;
+  semestre: string;
+  uesRaw: {
+    code: string;
+    nom: string;
+    ects: number;
+    ecues: ECUEResult[];
+  }[];
+}
+
 export const deliberationEngine = {
   // Calculer la délibération individuelle pour un étudiant
   calculerEtudiant: (
-    etudiantRaw: {
-      id: string;
-      matricule: string;
-      nom: string;
-      prenom: string;
-      filiere: string;
-      semestre: string;
-      uesRaw: {
-        code: string;
-        nom: string;
-        ects: number;
-        ecues: ECUEResult[];
-      }[];
-    },
+    etudiantRaw: DeliberationStudentInput,
     config: DeliberationConfig = DEFAULT_DELIBERATION_CONFIG
   ): EtudiantDeliberation => {
     let sumECTSValides = 0;
@@ -166,7 +168,7 @@ export const deliberationEngine = {
 
   // Calculer toute une cohorte / promotion
   calculerPromotion: (
-    etudiants: any[],
+    etudiants: DeliberationStudentInput[],
     config: DeliberationConfig = DEFAULT_DELIBERATION_CONFIG
   ): {
     resultats: EtudiantDeliberation[];
@@ -203,191 +205,3 @@ export const deliberationEngine = {
     };
   },
 };
-
-export const MOCK_ETUDIANTS_PROMOTION = [
-  {
-    id: "etu-1",
-    matricule: "ET2024001",
-    nom: "Ba",
-    prenom: "Amadou",
-    filiere: "Master 1 Génie Logiciel",
-    semestre: "Semestre 1",
-    uesRaw: [
-      {
-        code: "UE-INF101",
-        nom: "Architecture Logicielle & DevOps",
-        ects: 10,
-        ecues: [
-          { code: "EC1", nom: "Microservices", note: 16.5, coef: 2 },
-          { code: "EC2", nom: "Docker & Kubernetes", note: 15.0, coef: 2 },
-        ],
-      },
-      {
-        code: "UE-INF102",
-        nom: "Ingénierie des Données & Cloud",
-        ects: 10,
-        ecues: [
-          { code: "EC3", nom: "Bases NoSQL & Graph", note: 14.0, coef: 1.5 },
-          { code: "EC4", nom: "Cloud Computing AWS", note: 15.5, coef: 1.5 },
-        ],
-      },
-      {
-        code: "UE-MGT101",
-        nom: "Management Agile & Anglais Tech",
-        ects: 10,
-        ecues: [
-          { code: "EC5", nom: "Scrum & Kanban", note: 17.0, coef: 1 },
-          { code: "EC6", nom: "Anglais Professionnel", note: 14.5, coef: 1 },
-        ],
-      },
-    ],
-  },
-  {
-    id: "etu-2",
-    matricule: "ET2024002",
-    nom: "Sarr",
-    prenom: "Fatou",
-    filiere: "Master 1 Génie Logiciel",
-    semestre: "Semestre 1",
-    uesRaw: [
-      {
-        code: "UE-INF101",
-        nom: "Architecture Logicielle & DevOps",
-        ects: 10,
-        ecues: [
-          { code: "EC1", nom: "Microservices", note: 18.0, coef: 2 },
-          { code: "EC2", nom: "Docker & Kubernetes", note: 17.5, coef: 2 },
-        ],
-      },
-      {
-        code: "UE-INF102",
-        nom: "Ingénierie des Données & Cloud",
-        ects: 10,
-        ecues: [
-          { code: "EC3", nom: "Bases NoSQL & Graph", note: 16.0, coef: 1.5 },
-          { code: "EC4", nom: "Cloud Computing AWS", note: 16.5, coef: 1.5 },
-        ],
-      },
-      {
-        code: "UE-MGT101",
-        nom: "Management Agile & Anglais Tech",
-        ects: 10,
-        ecues: [
-          { code: "EC5", nom: "Scrum & Kanban", note: 15.0, coef: 1 },
-          { code: "EC6", nom: "Anglais Professionnel", note: 18.0, coef: 1 },
-        ],
-      },
-    ],
-  },
-  {
-    id: "etu-3",
-    matricule: "ET2024003",
-    nom: "Diop",
-    prenom: "Ibrahima",
-    filiere: "Master 1 Génie Logiciel",
-    semestre: "Semestre 1",
-    uesRaw: [
-      {
-        code: "UE-INF101",
-        nom: "Architecture Logicielle & DevOps",
-        ects: 10,
-        ecues: [
-          { code: "EC1", nom: "Microservices", note: 8.0, coef: 2 },
-          { code: "EC2", nom: "Docker & Kubernetes", note: 9.0, coef: 2 },
-        ],
-      },
-      {
-        code: "UE-INF102",
-        nom: "Ingénierie des Données & Cloud",
-        ects: 10,
-        ecues: [
-          { code: "EC3", nom: "Bases NoSQL & Graph", note: 12.0, coef: 1.5 },
-          { code: "EC4", nom: "Cloud Computing AWS", note: 13.0, coef: 1.5 },
-        ],
-      },
-      {
-        code: "UE-MGT101",
-        nom: "Management Agile & Anglais Tech",
-        ects: 10,
-        ecues: [
-          { code: "EC5", nom: "Scrum & Kanban", note: 11.5, coef: 1 },
-          { code: "EC6", nom: "Anglais Professionnel", note: 10.0, coef: 1 },
-        ],
-      },
-    ],
-  },
-  {
-    id: "etu-4",
-    matricule: "ET2024004",
-    nom: "Ndiaye",
-    prenom: "Awa",
-    filiere: "Master 1 Génie Logiciel",
-    semestre: "Semestre 1",
-    uesRaw: [
-      {
-        code: "UE-INF101",
-        nom: "Architecture Logicielle & DevOps",
-        ects: 10,
-        ecues: [
-          { code: "EC1", nom: "Microservices", note: 14.5, coef: 2 },
-          { code: "EC2", nom: "Docker & Kubernetes", note: 13.0, coef: 2 },
-        ],
-      },
-      {
-        code: "UE-INF102",
-        nom: "Ingénierie des Données & Cloud",
-        ects: 10,
-        ecues: [
-          { code: "EC3", nom: "Bases NoSQL & Graph", note: 5.5, coef: 1.5 }, // Eliminatoire < 7
-          { code: "EC4", nom: "Cloud Computing AWS", note: 14.0, coef: 1.5 },
-        ],
-      },
-      {
-        code: "UE-MGT101",
-        nom: "Management Agile & Anglais Tech",
-        ects: 10,
-        ecues: [
-          { code: "EC5", nom: "Scrum & Kanban", note: 13.0, coef: 1 },
-          { code: "EC6", nom: "Anglais Professionnel", note: 12.0, coef: 1 },
-        ],
-      },
-    ],
-  },
-  {
-    id: "etu-5",
-    matricule: "ET2024005",
-    nom: "Traoré",
-    prenom: "Mamadou",
-    filiere: "Master 1 Génie Logiciel",
-    semestre: "Semestre 1",
-    uesRaw: [
-      {
-        code: "UE-INF101",
-        nom: "Architecture Logicielle & DevOps",
-        ects: 10,
-        ecues: [
-          { code: "EC1", nom: "Microservices", note: 6.0, coef: 2 },
-          { code: "EC2", nom: "Docker & Kubernetes", note: 7.5, coef: 2 },
-        ],
-      },
-      {
-        code: "UE-INF102",
-        nom: "Ingénierie des Données & Cloud",
-        ects: 10,
-        ecues: [
-          { code: "EC3", nom: "Bases NoSQL & Graph", note: 7.0, coef: 1.5 },
-          { code: "EC4", nom: "Cloud Computing AWS", note: 8.0, coef: 1.5 },
-        ],
-      },
-      {
-        code: "UE-MGT101",
-        nom: "Management Agile & Anglais Tech",
-        ects: 10,
-        ecues: [
-          { code: "EC5", nom: "Scrum & Kanban", note: 9.0, coef: 1 },
-          { code: "EC6", nom: "Anglais Professionnel", note: 8.5, coef: 1 },
-        ],
-      },
-    ],
-  },
-];

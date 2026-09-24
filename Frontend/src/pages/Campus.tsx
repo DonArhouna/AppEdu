@@ -14,17 +14,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { MapPin, Building, Users, Plus, Edit, Trash2, Eye, RefreshCw, AlertCircle } from "lucide-react";
-import { CampusDialog } from "@/components/campus/CampusDialog";
+import { CampusDialog, type Campus } from "@/components/campus/CampusDialog";
 import { toast } from "sonner";
 import { structureApi } from "@/services/apiClient";
 
 const Campus = () => {
-  const [campusList, setCampusList] = useState<any[]>([]);
+  const [campusList, setCampusList] = useState<Campus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedCampus, setSelectedCampus] = useState<any>();
+  const [selectedCampus, setSelectedCampus] = useState<Campus>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [campusToDelete, setCampusToDelete] = useState<string | null>(null);
 
@@ -37,10 +37,10 @@ const Campus = () => {
         setError(res.error);
         setCampusList([]);
       } else {
-        setCampusList(res.data || []);
+        setCampusList((res.data || []) as Campus[]);
       }
-    } catch (err: any) {
-      setError(err?.message || "Erreur de connexion au serveur backend.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur de connexion au serveur backend.");
     } finally {
       setLoading(false);
     }
@@ -50,13 +50,16 @@ const Campus = () => {
     loadCampuses();
   }, []);
 
-  const handleSave = async (campusData: any) => {
+  const handleSave = async (campusData: Campus) => {
     const payload = {
       nom: campusData.nom,
-      code: campusData.code || campusData.nom.substring(0, 4).toUpperCase(),
+      code: campusData.code,
       description: campusData.description || "",
       responsable: campusData.responsable || "",
-      ville: campusData.ville || "Abidjan",
+      ville: campusData.ville || "",
+      adresse: campusData.adresse || "",
+      telephone: campusData.telephone || "",
+      email: campusData.email || "",
     };
 
     if (selectedCampus?.id) {
@@ -80,7 +83,7 @@ const Campus = () => {
     await loadCampuses();
   };
 
-  const handleEdit = (campus: any) => {
+  const handleEdit = (campus: Campus) => {
     setSelectedCampus(campus);
     setDialogOpen(true);
   };
@@ -183,7 +186,7 @@ const Campus = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="text-xs space-y-1 text-muted-foreground">
-                  <div>Ville : <span className="font-medium text-foreground">{campus.ville || "Abidjan"}</span></div>
+                  <div>Ville : <span className="font-medium text-foreground">{campus.ville || "Non renseignée"}</span></div>
                   <div>Responsable : <span className="font-medium text-foreground">{campus.responsable || "Non assigné"}</span></div>
                   <div>Départements rattachés : <span className="font-semibold text-primary">{campus.departements?.length || 0}</span></div>
                 </div>

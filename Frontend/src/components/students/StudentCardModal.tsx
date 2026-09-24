@@ -21,21 +21,20 @@ interface StudentCardModalProps {
     telephone: string;
     email: string;
   };
+  sessionLabel?: string;
+  status?: string;
+  validUntil?: string;
 }
 
 export const StudentCardModal = ({
   open,
   onOpenChange,
-  student = {
-    nom: "Dupont",
-    prenom: "Marie",
-    matricule: "ETU-2026-0042",
-    filiere: "Master 1 Génie Logiciel",
-    niveau: "Master 1",
-    telephone: "+33 6 12 34 56 78",
-    email: "m.dupont@univ-edumanage.com",
-  },
+  student,
+  sessionLabel,
+  status,
+  validUntil,
 }: StudentCardModalProps) => {
+  if (!student) return null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
@@ -61,10 +60,10 @@ export const StudentCardModal = ({
             <div className="flex items-center justify-between border-b border-white/20 pb-2 relative z-10">
               <div className="flex items-center gap-2">
                 <img src={logo} alt="EduManagePro" className="h-6 w-6 object-contain" />
-                <span className="font-bold text-xs tracking-tight">EduManagePro Univ</span>
+                <span className="font-bold text-xs tracking-tight">EduManagePro</span>
               </div>
               <Badge className="bg-white/20 text-white border-none text-[9px]">
-                2025 - 2026
+                {sessionLabel || "Session non renseignée"}
               </Badge>
             </div>
 
@@ -91,8 +90,8 @@ export const StudentCardModal = ({
             {/* Bottom Bar with QR Code & Barcode */}
             <div className="flex items-center justify-between border-t border-white/20 pt-2 relative z-10">
               <div className="font-mono text-[9px] text-white/70">
-                <span>STATUT: ÉTUDIANT REGULIER</span>
-                <span className="block text-[8px] text-white/50">VALIDE JUSQU'AU 31/08/2026</span>
+                <span>STATUT: {status || "NON RENSEIGNÉ"}</span>
+                <span className="block text-[8px] text-white/50">VALIDITÉ : {validUntil || "NON RENSEIGNÉE"}</span>
               </div>
               <div className="h-8 w-8 bg-white p-0.5 rounded flex items-center justify-center">
                 <QrCode className="h-full w-full text-black" />

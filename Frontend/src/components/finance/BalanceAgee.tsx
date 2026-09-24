@@ -1,527 +1,184 @@
-import React, { useState, useMemo } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, Clock, Loader2, RefreshCw, Search, ShieldAlert, Wallet } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { KpiCard } from "@/components/ui/kpi-card";
-import {
-  AlertTriangle,
-  Send,
-  Printer,
-  Search,
-  CheckCircle2,
-  Clock,
-  ShieldAlert,
-  Wallet,
-  DollarSign,
-  Mail,
-  MessageSquare,
-  FileText,
-  Filter,
-} from "lucide-react";
-import { toast } from "sonner";
-import {
-  type Debiteur,
-  type NiveauRelance,
-  type CanalRelance,
-  type HistoriqueRelance,
-  INITIAL_DEBITEURS,
-  MODELES_RELANCE,
-  relanceService,
-} from "@/services/relanceService";
-import { LettreRelanceModal } from "./LettreRelanceModal";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { financesApi, extractErrorMessage, setupApi } from "@/services/apiClient";
 
-export const BalanceAgee: React.FC = () => {
-  const [debiteurs, setDebiteurs] = useState<Debiteur[]>(INITIAL_DEBITEURS);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedTranche, setSelectedTranche] = useState<string>("ALL");
-  const [historique, setHistorique] = useState<HistoriqueRelance[]>([]);
+interface BalanceItem {
+  etudiant_id: string;
+  matricule: string;
+  nom_complet: string;
+  filiere: string;
+  montant_total_du: number;
+  non_echu: number;
+  retard_1_30_jours: number;
+  retard_31_60_jours: number;
+  retard_plus_60_jours: number;
+}
 
-  // State for letter modal
-  const [letterOpen, setLetterOpen] = useState(false);
-  const [selectedDebiteurForLetter, setSelectedDebiteurForLetter] = useState<Debiteur | null>(null);
+interface BalanceResponse {
+  date_calcul: string;
+  total_creances: number;
+  items: BalanceItem[];
+}
 
-  // State for quick send modal
-  const [sendModalOpen, setSendModalOpen] = useState(false);
-  const [activeDebiteur, setActiveDebiteur] = useState<Debiteur | null>(null);
-  const [selectedNiveau, setSelectedNiveau] = useState<NiveauRelance>("NIVEAU_1");
-  const [selectedCanal, setSelectedCanal] = useState<CanalRelance>("EMAIL");
-  const [customMessage, setCustomMessage] = useState("");
+const EMPTY_ITEMS: BalanceItem[] = [];
 
-  // Calculate statistics
-  const stats = useMemo(() => relanceService.calculerStats(debiteurs), [debiteurs]);
+type Tranche = "all" | "1_30" | "31_60" | "60_plus";
+type TrancheFilter = Tranche;
 
-  // Filter debtors
-  const filteredDebiteurs = useMemo(() => {
-    return debiteurs.filter((d) => {
-      const matchesSearch =
-        d.nom.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.prenom.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.matricule.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.numeroFacture.toLowerCase().includes(searchQuery.toLowerCase());
+const getTranche = (item: BalanceItem): Tranche => {
+  if (item.retard_plus_60_jours > 0) return "60_plus";
+  if (item.retard_31_60_jours > 0) return "31_60";
+  if (item.retard_1_30_jours > 0) return "1_30";
+  return "all";
+};
 
-      const matchesTranche =
-        selectedTranche === "ALL" ||
-        (selectedTranche === "1_30" && d.trancheRetard === "1_30") ||
-        (selectedTranche === "31_60" && d.trancheRetard === "31_60") ||
-        (selectedTranche === "61_90" && d.trancheRetard === "61_90") ||
-        (selectedTranche === "PLUS_90" && d.trancheRetard === "PLUS_90") ||
-        (selectedTranche === "CRITIQUE" && (d.trancheRetard === "61_90" || d.trancheRetard === "PLUS_90"));
+export const BalanceAgee = () => {
+  const [balance, setBalance] = useState<BalanceResponse | null>(null);
+  const [currency, setCurrency] = useState("");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<TrancheFilter>("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-      return matchesSearch && matchesTranche;
-    });
-  }, [debiteurs, searchQuery, selectedTranche]);
-
-  // Open send relance modal
-  const handleOpenSend = (debiteur: Debiteur) => {
-    setActiveDebiteur(debiteur);
-    setSelectedNiveau(debiteur.niveauRecommande);
-    setSelectedCanal("EMAIL");
-    const rawTemplate = MODELES_RELANCE[debiteur.niveauRecommande].emailCorps;
-    setCustomMessage(relanceService.interpolerMessage(rawTemplate, debiteur));
-    setSendModalOpen(true);
-  };
-
-  // Switch level in send modal
-  const handleNiveauChange = (niveau: NiveauRelance) => {
-    setSelectedNiveau(niveau);
-    if (!activeDebiteur) return;
-    const raw = selectedCanal === "SMS" ? MODELES_RELANCE[niveau].smsCorps : MODELES_RELANCE[niveau].emailCorps;
-    setCustomMessage(relanceService.interpolerMessage(raw, activeDebiteur));
-  };
-
-  // Switch channel in send modal
-  const handleCanalChange = (canal: CanalRelance) => {
-    setSelectedCanal(canal);
-    if (!activeDebiteur) return;
-    const raw = canal === "SMS" ? MODELES_RELANCE[selectedNiveau].smsCorps : MODELES_RELANCE[selectedNiveau].emailCorps;
-    setCustomMessage(relanceService.interpolerMessage(raw, activeDebiteur));
-  };
-
-  // Confirm sending relance
-  const handleConfirmSend = () => {
-    if (!activeDebiteur) return;
-
-    const newRelance = relanceService.envoyerRelance(activeDebiteur, selectedNiveau, selectedCanal);
-
-    // Update debiteur status
-    setDebiteurs((prev) =>
-      prev.map((d) =>
-        d.id === activeDebiteur.id
-          ? {
-              ...d,
-              derniereRelance: {
-                date: new Date().toISOString().split("T")[0],
-                niveau: selectedNiveau,
-                canal: selectedCanal,
-              },
-            }
-          : d
-      )
-    );
-
-    setHistorique((prev) => [newRelance, ...prev]);
-    setSendModalOpen(false);
-
-    toast.success(
-      `Relance ${selectedNiveau} transmise avec succès à ${activeDebiteur.prenom} ${activeDebiteur.nom} par ${selectedCanal}.`
-    );
-  };
-
-  // Open letter modal
-  const handleOpenLetter = (debiteur: Debiteur) => {
-    setSelectedDebiteurForLetter(debiteur);
-    setLetterOpen(true);
-  };
-
-  const getTrancheBadge = (tranche: Debiteur["trancheRetard"]) => {
-    switch (tranche) {
-      case "1_30":
-        return <Badge className="bg-blue-600 text-white hover:bg-blue-700">1 à 30 jours</Badge>;
-      case "31_60":
-        return <Badge className="bg-amber-500 text-white hover:bg-amber-600">31 à 60 jours</Badge>;
-      case "61_90":
-        return <Badge className="bg-orange-600 text-white hover:bg-orange-700">61 à 90 jours</Badge>;
-      case "PLUS_90":
-        return <Badge className="bg-rose-600 text-white hover:bg-rose-700">Plus de 90 jours</Badge>;
-      default:
-        return <Badge variant="outline">À échoir</Badge>;
+  const loadBalance = async () => {
+    setLoading(true);
+    setError(null);
+    const [balanceResult, statusResult] = await Promise.all([
+      financesApi.getBalanceAgee(),
+      setupApi.getStatus(),
+    ]);
+    if (balanceResult.error || !balanceResult.data) {
+      setError(extractErrorMessage(balanceResult.error, "Impossible de charger la balance âgée."));
+      setBalance(null);
+    } else {
+      setBalance(balanceResult.data);
     }
+    setCurrency(statusResult.data?.devise || "");
+    setLoading(false);
   };
+
+  useEffect(() => {
+    void loadBalance();
+  }, []);
+
+  const items = balance?.items ?? EMPTY_ITEMS;
+  const filteredItems = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return items.filter((item) => {
+      const matchesSearch = !query || [item.nom_complet, item.matricule, item.filiere]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+      const matchesFilter = filter === "all" || getTranche(item) === filter;
+      return matchesSearch && matchesFilter;
+    });
+  }, [items, search, filter]);
+
+  const totalDue = balance?.total_creances || 0;
+  const critical = items.reduce((sum, item) => sum + item.retard_plus_60_jours, 0);
+  const firstBucket = items.reduce((sum, item) => sum + item.retard_1_30_jours, 0);
+  const currencyLabel = currency || "devise de l'établissement";
 
   return (
     <div className="space-y-6">
-      {/* KPI Cards Header */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard
-          title="Total Créances en Retard"
-          value={`${stats.totalCreances.toLocaleString("fr-FR")} F`}
-          subtitle={`${stats.totalDebiteurs} dossiers débiteurs actifs`}
-          icon={Wallet}
-          color="rose"
-        />
-        <KpiCard
-          title="Créances Critiques (> 60j)"
-          value={`${stats.totalCritique.toLocaleString("fr-FR")} F`}
-          subtitle={`${stats.contentieuxCount} dossiers en contentieux lourd`}
-          icon={ShieldAlert}
-          color="rose"
-        />
-        <KpiCard
-          title="Retard Moyen / 1-30j"
-          value={`${stats.tranche1_30.toLocaleString("fr-FR")} F`}
-          subtitle="Rappels amiables niveau 1"
-          icon={Clock}
-          color="amber"
-        />
-        <KpiCard
-          title="Taux Recouvrement Global"
-          value="78.4%"
-          subtitle="Objectif de gestion : 85%"
-          icon={CheckCircle2}
-          color="emerald"
-        />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <KpiCard title="Total des créances" value={`${totalDue.toLocaleString("fr-FR")} ${currencyLabel}`} subtitle="Solde restant dans l'API" icon={Wallet} color="rose" />
+        <KpiCard title="Retard critique" value={`${critical.toLocaleString("fr-FR")} ${currencyLabel}`} subtitle="Plus de 60 jours" icon={ShieldAlert} color="rose" />
+        <KpiCard title="Retard 1–30 jours" value={`${firstBucket.toLocaleString("fr-FR")} ${currencyLabel}`} subtitle="Créances sur la première échéance" icon={Clock} color="amber" />
       </div>
 
-      {/* Main Aging Table Card */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Erreur backend</AlertTitle>
+          <AlertDescription className="flex items-center justify-between gap-3">
+            <span>{error}</span>
+            <Button variant="outline" size="sm" onClick={loadBalance}><RefreshCw className="mr-2 h-4 w-4" />Réessayer</Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-                Balance Âgée des Créances & Procédures de Relance
-              </CardTitle>
+              <CardTitle>Balance âgée des créances</CardTitle>
               <CardDescription>
-                Segmentation temporelle des impayés avec automatisation des relances échelonnées (Niveau 1 à 3)
+                Calculée par le backend à partir des factures et des paiements enregistrés.
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  const count = debiteurs.filter((d) => !d.derniereRelance).length;
-                  toast.success(`Relances groupées automatiques envoyées à ${count || debiteurs.length} débiteurs !`);
-                }}
-              >
-                <Send className="h-4 w-4 mr-1.5" />
-                Relance Groupée Automatique
-              </Button>
-            </div>
+            <Button variant="outline" size="sm" onClick={loadBalance} disabled={loading}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Actualiser
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Filter Bar */}
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Rechercher étudiant, matricule, facture..."
-                className="pl-8"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="Étudiant, matricule ou filière" />
             </div>
-
-            {/* Tranche Buttons */}
-            <div className="flex items-center gap-1.5 flex-wrap w-full md:w-auto">
-              <Button
-                size="sm"
-                variant={selectedTranche === "ALL" ? "default" : "outline"}
-                onClick={() => setSelectedTranche("ALL")}
-              >
-                Tous ({debiteurs.length})
-              </Button>
-              <Button
-                size="sm"
-                variant={selectedTranche === "1_30" ? "default" : "outline"}
-                onClick={() => setSelectedTranche("1_30")}
-              >
-                1 - 30j
-              </Button>
-              <Button
-                size="sm"
-                variant={selectedTranche === "31_60" ? "default" : "outline"}
-                onClick={() => setSelectedTranche("31_60")}
-              >
-                31 - 60j
-              </Button>
-              <Button
-                size="sm"
-                variant={selectedTranche === "61_90" ? "default" : "outline"}
-                onClick={() => setSelectedTranche("61_90")}
-              >
-                61 - 90j
-              </Button>
-              <Button
-                size="sm"
-                variant={selectedTranche === "PLUS_90" ? "default" : "outline"}
-                onClick={() => setSelectedTranche("PLUS_90")}
-              >
-                &gt; 90j
-              </Button>
-              <Button
-                size="sm"
-                variant={selectedTranche === "CRITIQUE" ? "destructive" : "outline"}
-                onClick={() => setSelectedTranche("CRITIQUE")}
-              >
-                Critiques ({stats.contentieuxCount})
-              </Button>
+            <div className="flex flex-wrap gap-2">
+              {([
+                ["all", "Tous"],
+                ["1_30", "1–30j"],
+                ["31_60", "31–60j"],
+                ["60_plus", "> 60j"],
+              ] as const).map(([value, label]) => (
+                <Button key={value} size="sm" variant={filter === value ? "default" : "outline"} onClick={() => setFilter(value)}>
+                  {label}
+                </Button>
+              ))}
             </div>
           </div>
 
-          {/* Table */}
-          <div className="rounded-xl border overflow-hidden">
+          <div className="overflow-x-auto rounded-xl border">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40">
-                  <TableHead>Étudiant / Matricule</TableHead>
-                  <TableHead>Filière</TableHead>
-                  <TableHead>Facture Réf.</TableHead>
-                  <TableHead className="text-right">Montant Dû</TableHead>
-                  <TableHead className="text-center">Jours de Retard</TableHead>
-                  <TableHead className="text-center">Tranche</TableHead>
-                  <TableHead className="text-center">Dernière Relance</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Étudiant</TableHead><TableHead>Filière</TableHead>
+                  <TableHead className="text-right">Solde</TableHead><TableHead className="text-right">1–30j</TableHead>
+                  <TableHead className="text-right">31–60j</TableHead><TableHead className="text-right">&gt;60j</TableHead>
+                  <TableHead>Tranche</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredDebiteurs.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      Aucun dossier débiteur trouvé pour ce filtre.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredDebiteurs.map((d) => (
-                    <TableRow key={d.id} className="hover:bg-muted/30">
-                      <TableCell>
-                        <div className="font-semibold text-sm">
-                          {d.prenom} {d.nom}
-                        </div>
-                        <div className="font-mono text-xs text-muted-foreground">{d.matricule}</div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{d.filiere}</TableCell>
-                      <TableCell className="font-mono text-xs font-semibold">{d.numeroFacture}</TableCell>
-                      <TableCell className="text-right">
-                        <span className="font-mono font-bold text-rose-600 text-sm">
-                          {d.montantRestant.toLocaleString("fr-FR")} F
-                        </span>
-                        <div className="text-[11px] text-muted-foreground">
-                          sur {d.montantTotal.toLocaleString("fr-FR")} F
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center font-mono font-bold text-sm">
-                        {d.joursRetard} jours
-                      </TableCell>
-                      <TableCell className="text-center">{getTrancheBadge(d.trancheRetard)}</TableCell>
-                      <TableCell className="text-center">
-                        {d.derniereRelance ? (
-                          <div className="space-y-0.5">
-                            <Badge variant="outline" className="text-[10px] font-mono">
-                              {d.derniereRelance.niveau} ({d.derniereRelance.canal})
-                            </Badge>
-                            <div className="text-[10px] text-muted-foreground">{d.derniereRelance.date}</div>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground italic">Aucune relance</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-8 px-2.5"
-                            onClick={() => handleOpenSend(d)}
-                            title="Envoyer relance Email / SMS"
-                          >
-                            <Send className="h-3.5 w-3.5 mr-1" />
-                            Relancer
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 px-2 text-primary"
-                            onClick={() => handleOpenLetter(d)}
-                            title="Imprimer Mise en Demeure / Lettre A4"
-                          >
-                            <Printer className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
+                {loading ? (
+                  <TableRow><TableCell colSpan={7} className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></TableCell></TableRow>
+                ) : filteredItems.length === 0 ? (
+                  <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">Aucune créance ne correspond au filtre.</TableCell></TableRow>
+                ) : filteredItems.map((item) => {
+                  const tranche = getTranche(item);
+                  return (
+                    <TableRow key={item.etudiant_id}>
+                      <TableCell><p className="font-medium">{item.nom_complet}</p><p className="font-mono text-xs text-muted-foreground">{item.matricule}</p></TableCell>
+                      <TableCell>{item.filiere || "Non renseignée"}</TableCell>
+                      <TableCell className="text-right font-mono font-semibold text-destructive">{item.montant_total_du.toLocaleString("fr-FR")} {currencyLabel}</TableCell>
+                      <TableCell className="text-right font-mono">{item.retard_1_30_jours.toLocaleString("fr-FR")}</TableCell>
+                      <TableCell className="text-right font-mono">{item.retard_31_60_jours.toLocaleString("fr-FR")}</TableCell>
+                      <TableCell className="text-right font-mono text-rose-600">{item.retard_plus_60_jours.toLocaleString("fr-FR")}</TableCell>
+                      <TableCell><Badge variant={tranche === "60_plus" ? "destructive" : tranche === "all" ? "outline" : "secondary"}>{tranche === "all" ? "Non échu" : tranche === "60_plus" ? "> 60j" : tranche === "31_60" ? "31–60j" : "1–30j"}</Badge></TableCell>
                     </TableRow>
-                  ))
-                )}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Les relances automatiques ne sont pas activées tant qu'un service de messagerie et un modèle de relance n'ont pas été configurés côté backend.
+          </p>
         </CardContent>
       </Card>
-
-      {/* Audit Log / Historique récent */}
-      {historique.length > 0 && (
-        <Card>
-          <CardHeader className="py-4">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Clock className="h-4 w-4 text-muted-foreground" />
-              Journal des Relances Récentes ({historique.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="py-0 pb-4">
-            <div className="divide-y divide-border text-xs">
-              {historique.map((h) => (
-                <div key={h.id} className="py-2.5 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="font-mono text-[10px]">
-                      {h.canal}
-                    </Badge>
-                    <span className="font-semibold">{h.nomComplet}</span>
-                    <span className="text-muted-foreground">({h.matricule})</span>
-                    <Badge
-                      className={
-                        h.niveau === "NIVEAU_3"
-                          ? "bg-rose-600 text-white"
-                          : h.niveau === "NIVEAU_2"
-                          ? "bg-amber-500 text-white"
-                          : "bg-blue-600 text-white"
-                      }
-                    >
-                      {h.niveau}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-3 text-muted-foreground font-mono">
-                    <span>{h.montantRappele.toLocaleString("fr-FR")} FCFA</span>
-                    <Badge className="bg-emerald-600 text-white text-[10px]">{h.statut}</Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Modal d'envoi individuel multi-canal */}
-      <Dialog open={sendModalOpen} onOpenChange={setSendModalOpen}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Send className="h-5 w-5 text-primary" />
-              Envoyer une Relance de Recouvrement
-            </DialogTitle>
-            <DialogDescription>
-              Destinataire : {activeDebiteur?.prenom} {activeDebiteur?.nom} (Facture {activeDebiteur?.numeroFacture})
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase">
-                  Niveau d'Échelonnement
-                </label>
-                <Select value={selectedNiveau} onValueChange={(val: NiveauRelance) => handleNiveauChange(val)}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NIVEAU_1">Niveau 1 — Amiable / Courtois (1-30j)</SelectItem>
-                    <SelectItem value="NIVEAU_2">Niveau 2 — Ferme / Avertissement (31-60j)</SelectItem>
-                    <SelectItem value="NIVEAU_3">Niveau 3 — Mise en Demeure / Contentieux (&gt;60j)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase">Canal de Transmission</label>
-                <Select value={selectedCanal} onValueChange={(val: CanalRelance) => handleCanalChange(val)}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="EMAIL">Email Professionnel</SelectItem>
-                    <SelectItem value="SMS">SMS Instantané</SelectItem>
-                    <SelectItem value="TOUS">Email + SMS combiné</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="p-3 bg-muted/40 rounded-lg border text-xs space-y-1">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Solde Débiteur :</span>
-                <span className="font-mono font-bold text-rose-600">
-                  {activeDebiteur?.montantRestant.toLocaleString("fr-FR")} FCFA
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Retard Constaté :</span>
-                <span className="font-bold">{activeDebiteur?.joursRetard} jours</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Contact :</span>
-                <span className="font-mono">
-                  {activeDebiteur?.email} • {activeDebiteur?.telephone}
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase">
-                Aperçu & Personnalisation du Message
-              </label>
-              <Textarea
-                rows={6}
-                value={customMessage}
-                onChange={(e) => setCustomMessage(e.target.value)}
-                className="font-mono text-xs leading-relaxed"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setSendModalOpen(false)}>
-              Annuler
-            </Button>
-            <Button onClick={handleConfirmSend} className="bg-primary text-primary-foreground">
-              <Send className="h-4 w-4 mr-1.5" />
-              Confirmer l'Envoi
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Lettre Officielle / Mise en Demeure Modal */}
-      <LettreRelanceModal
-        open={letterOpen}
-        onOpenChange={setLetterOpen}
-        debiteur={selectedDebiteurForLetter}
-      />
     </div>
   );
 };
+
+export default BalanceAgee;

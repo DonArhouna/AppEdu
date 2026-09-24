@@ -1,133 +1,106 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Sliders, Sun, Moon, Globe, Shield, Save, Smartphone, Key } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertCircle, Save, Sliders, Sun } from "lucide-react";
 import { toast } from "sonner";
 
-const ParametresCompte = () => {
-  const [theme, setTheme] = useState("system");
-  const [langue, setLangue] = useState("fr");
-  const [compactMode, setCompactMode] = useState(false);
-  const [autoSave, setAutoSave] = useState(true);
+type ThemePreference = "light" | "dark" | "system";
 
-  const handleSaveSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    toast.success("Vos préférences d'affichage et de système ont été appliquées.");
+const getInitialTheme = (): ThemePreference => {
+  if (typeof window === "undefined") return "system";
+  const stored = window.localStorage.getItem("theme");
+  if (stored === "light" || stored === "dark") return stored;
+  return "system";
+};
+
+const ParametresCompte = () => {
+  const [theme, setTheme] = useState<ThemePreference>(getInitialTheme);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  useEffect(() => {
+    const isDark = theme === "dark" || (theme === "system" && systemPrefersDark);
+    document.documentElement.classList.toggle("dark", isDark);
+    window.localStorage.setItem("theme", theme);
+  }, [systemPrefersDark, theme]);
+
+  const handleSaveSettings = (event: React.FormEvent) => {
+    event.preventDefault();
+    window.localStorage.setItem("theme", theme);
+    toast.success("Préférence d'affichage enregistrée dans ce navigateur.");
   };
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
+    <div className="mx-auto max-w-4xl space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Paramètres du Compte</h1>
-        <p className="text-muted-foreground mt-1">
-          Personnalisez votre expérience d'utilisation, affichage et préférences système
+        <p className="mt-1 text-muted-foreground">
+          Personnalisez les préférences d'affichage disponibles dans cette instance.
         </p>
       </div>
 
       <form onSubmit={handleSaveSettings} className="space-y-6">
-        {/* Apparence */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Sun className="h-5 w-5 text-amber-500" />
-              Apparence & Thème
+              Apparence
             </CardTitle>
             <CardDescription>
-              Personnalisez les couleurs et le style visuel d'EduManagePro.
+              Le thème est appliqué immédiatement et conservé uniquement dans ce navigateur.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="theme">Mode Thème</Label>
-              <Select value={theme} onValueChange={setTheme}>
+              <Select value={theme} onValueChange={(value: ThemePreference) => setTheme(value)}>
                 <SelectTrigger id="theme" className="w-full sm:w-[280px]">
                   <SelectValue placeholder="Choisir le thème" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="light">Clair (Standard)</SelectItem>
-                  <SelectItem value="dark">Sombre (Dark Mode)</SelectItem>
-                  <SelectItem value="system">Système (Automatique)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center justify-between py-2 border-t">
-              <div>
-                <p className="font-medium text-sm">Mode Affichage Compact</p>
-                <p className="text-xs text-muted-foreground">
-                  Réduit les espacements dans les tableaux et les listes.
-                </p>
-              </div>
-              <Switch checked={compactMode} onCheckedChange={setCompactMode} />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Langue & Région */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Globe className="h-5 w-5 text-blue-500" />
-              Langue & Région
-            </CardTitle>
-            <CardDescription>
-              Définissez la langue par défaut et le format de date.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="langue">Langue de l'interface</Label>
-              <Select value={langue} onValueChange={setLangue}>
-                <SelectTrigger id="langue" className="w-full sm:w-[280px]">
-                  <SelectValue placeholder="Langue" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fr">Français (FR)</SelectItem>
-                  <SelectItem value="en">English (US)</SelectItem>
-                  <SelectItem value="es">Español</SelectItem>
+                  <SelectItem value="light">Clair (standard)</SelectItem>
+                  <SelectItem value="dark">Sombre</SelectItem>
+                  <SelectItem value="system">Système (automatique)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </CardContent>
         </Card>
 
-        {/* Sauvegarde & Comportement */}
-        <Card>
+        <Card className="border-muted/60 bg-muted/20">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Sliders className="h-5 w-5 text-emerald-500" />
-              Comportement & Sauvegarde
+              <Sliders className="h-5 w-5 text-muted-foreground" />
+              Fonctionnalités non activées
             </CardTitle>
             <CardDescription>
-              Ajustez l'enregistrement automatique lors des saisies de notes et formulaires.
+              Ces préférences ne sont pas encore persistées par l'API et ne doivent pas être présentées comme actives.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between py-2">
-              <div>
-                <p className="font-medium text-sm">Enregistrement Automatique en Brouillon</p>
-                <p className="text-xs text-muted-foreground">
-                  Sauvegarde vos saisies de notes et formulaires toutes les 30 secondes.
-                </p>
-              </div>
-              <Switch checked={autoSave} onCheckedChange={setAutoSave} />
+          <CardContent>
+            <div className="flex items-start gap-2 text-sm text-muted-foreground" role="note">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                La langue, le mode compact et l'enregistrement automatique seront disponibles après la persistance des préférences côté serveur.
+              </span>
             </div>
           </CardContent>
         </Card>
 
         <div className="flex justify-end gap-3">
           <Button type="submit" className="shadow-md">
-            <Save className="h-4 w-4 mr-2" />
-            Enregistrer les préférences
+            <Save className="mr-2 h-4 w-4" />
+            Enregistrer la préférence
           </Button>
         </div>
       </form>

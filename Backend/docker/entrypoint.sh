@@ -23,7 +23,7 @@ except Exception:
 fi
 
 echo "📦 Application des migrations de schéma avec Alembic..."
-alembic upgrade head || echo "⚠️ Avertissement : Les migrations n'ont pu être appliquées (premier démarrage ou DB vide)."
+alembic upgrade head
 
 echo "🌟 Démarrage du serveur Uvicorn sur 0.0.0.0:8000..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000

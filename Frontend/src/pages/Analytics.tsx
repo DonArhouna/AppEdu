@@ -1,462 +1,76 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, BarChart3, CheckCircle2, DollarSign, GraduationCap, Loader2, RefreshCw, Users } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
-import {
-  TrendingUp,
-  TrendingDown,
-  Users,
-  GraduationCap,
-  DollarSign,
-  Building,
-  AlertTriangle,
-} from "lucide-react";
-
-import { KpiCard } from "@/components/ui/kpi-card";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { etudiantsApi, financesApi, pedagogieApi, sessionsApi, structureApi, setupApi, extractErrorMessage } from "@/services/apiClient";
+import type { AcademicSession, Filiere, Invoice, Note, Payment, Student } from "@/services/apiTypes";
 
 const Analytics = () => {
-  // KPIs data standardisés
-  const kpis = [
-    {
-      title: "Effectifs Totaux",
-      value: "1,234",
-      trend: "+12%",
-      trendDirection: "up" as const,
-      icon: Users,
-      colorVariant: "primary" as const,
-    },
-    {
-      title: "Taux de Réussite",
-      value: "87.5%",
-      trend: "+3.2%",
-      trendDirection: "up" as const,
-      icon: GraduationCap,
-      colorVariant: "emerald" as const,
-    },
-    {
-      title: "Taux d'Abandon",
-      value: "8.3%",
-      trend: "-1.5%",
-      trendDirection: "down" as const,
-      icon: AlertTriangle,
-      colorVariant: "rose" as const,
-    },
-    {
-      title: "Chiffre d'Affaires",
-      value: "850M FCFA",
-      trend: "+15%",
-      trendDirection: "up" as const,
-      icon: DollarSign,
-      colorVariant: "amber" as const,
-    },
-  ];
+  const [students, setStudents] = useState<Student[]>([]);
+  const [filieres, setFilieres] = useState<Filiere[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [factures, setFactures] = useState<Invoice[]>([]);
+  const [sessions, setSessions] = useState<AcademicSession[]>([]);
+  const [currency, setCurrency] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Success rate by program
-  const tauxReussiteData = [
-    { filiere: "Licence Info", taux: 92 },
-    { filiere: "Master Gestion", taux: 88 },
-    { filiere: "DUT Commerce", taux: 85 },
-    { filiere: "Licence Compta", taux: 90 },
-    { filiere: "Master RH", taux: 87 },
-    { filiere: "BTS Informatique", taux: 83 },
-  ];
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    const results = await Promise.all([
+      etudiantsApi.getAll(), structureApi.getFilieres(), pedagogieApi.getNotes(),
+      financesApi.getPaiements(), financesApi.getFactures(), sessionsApi.getAll(), setupApi.getStatus(),
+    ]);
+    const firstError = results.find((result) => result.error)?.error;
+    if (firstError) {
+      setError(extractErrorMessage(firstError));
+    }
+    setStudents(results[0].data || []);
+    setFilieres(results[1].data || []);
+    setNotes(results[2].data || []);
+    setPayments(results[3].data || []);
+    setFactures(results[4].data || []);
+    setSessions(results[5].data || []);
+    setCurrency(results[6].data?.devise || "");
+    setLoading(false);
+  };
 
-  // Enrollment evolution
-  const effectifsData = [
-    { mois: "Sep", etudiants: 980 },
-    { mois: "Oct", etudiants: 1020 },
-    { mois: "Nov", etudiants: 1050 },
-    { mois: "Dec", etudiants: 1080 },
-    { mois: "Jan", etudiants: 1150 },
-    { mois: "Fev", etudiants: 1200 },
-    { mois: "Mar", etudiants: 1234 },
-  ];
+  useEffect(() => { void load(); }, []);
 
-  // Distribution by program
-  const distributionData = [
-    { name: "Informatique", value: 420 },
-    { name: "Gestion", value: 350 },
-    { name: "Commerce", value: 280 },
-    { name: "Comptabilité", value: 184 },
-  ];
-
-  const COLORS = ["hsl(var(--primary))", "hsl(var(--secondary))", "hsl(var(--accent))", "hsl(var(--muted))"];
-
-  // Room occupancy
-  const occupationSallesData = [
-    { jour: "Lun", taux: 85 },
-    { jour: "Mar", taux: 92 },
-    { jour: "Mer", taux: 88 },
-    { jour: "Jeu", taux: 95 },
-    { jour: "Ven", taux: 78 },
-    { jour: "Sam", taux: 45 },
-  ];
-
-  // Financial health
-  const santeFinanciereData = [
-    { mois: "Sep", recettes: 120, depenses: 85 },
-    { mois: "Oct", recettes: 125, depenses: 90 },
-    { mois: "Nov", recettes: 130, depenses: 88 },
-    { mois: "Dec", recettes: 140, depenses: 95 },
-    { mois: "Jan", recettes: 145, depenses: 92 },
-    { mois: "Fev", recettes: 150, depenses: 98 },
-    { mois: "Mar", recettes: 155, depenses: 100 },
-  ];
-
-  // Students at risk (for ML prediction feature)
-  const etudiantsRisqueData = [
-    { nom: "Jean Martin", filiere: "Licence Info", risque: 85, facteurs: "Absences élevées, notes en baisse" },
-    { nom: "Marie Dubois", filiere: "Master Gestion", risque: 72, facteurs: "Retard paiements, participation faible" },
-    { nom: "Ahmed Hassan", filiere: "DUT Commerce", risque: 68, facteurs: "Notes limites, absences récurrentes" },
-    { nom: "Sophie Bernard", filiere: "Licence Compta", risque: 64, facteurs: "Difficultés matières clés" },
-  ];
+  const totalPaid = payments.reduce((sum, payment) => sum + Number(payment.montant || 0), 0);
+  const totalInvoiced = factures.reduce((sum, facture) => sum + Number(facture.montant_total || 0), 0);
+  const recoveryRate = totalInvoiced ? Math.round((totalPaid / totalInvoiced) * 100) : 0;
+  const averageNote = notes.length ? notes.reduce((sum, note) => sum + Number(note.valeur || 0), 0) / notes.length : 0;
+  const filiereDistribution = useMemo(() => {
+    const counts = new Map<string, number>();
+    students.forEach((student) => counts.set(student.filiere || "Non renseignée", (counts.get(student.filiere || "Non renseignée") || 0) + 1));
+    return Array.from(counts.entries()).map(([name, value]) => ({ name, value }));
+  }, [students]);
+  const currencyLabel = currency || "devise de l'établissement";
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Analytics & Business Intelligence</h1>
-        <p className="text-muted-foreground mt-2">
-          Tableaux de bord et indicateurs de performance pour la Direction
-        </p>
-      </div>
-
-      {/* Uniform KPI Cards Standard */}
-      <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-        {kpis.map((kpi) => (
-          <KpiCard
-            key={kpi.title}
-            title={kpi.title}
-            value={kpi.value}
-            icon={kpi.icon}
-            trend={kpi.trend}
-            trendDirection={kpi.trendDirection}
-            trendLabel="vs année dernière"
-            colorVariant={kpi.colorVariant}
-          />
-        ))}
-      </div>
-
-      {/* Charts Tabs */}
-      <Tabs defaultValue="academique" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="academique">Académique</TabsTrigger>
-          <TabsTrigger value="financier">Financier</TabsTrigger>
-          <TabsTrigger value="ressources">Ressources</TabsTrigger>
-          <TabsTrigger value="prediction">Prédiction (ML)</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="academique" className="space-y-4">
-          <div className="grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Taux de Réussite par Filière</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={tauxReussiteData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="filiere" fontSize={12} />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="taux" fill="hsl(var(--primary))" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Évolution des Effectifs</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={effectifsData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="mois" />
-                    <YAxis />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="etudiants"
-                      stroke="hsl(var(--primary))"
-                      strokeWidth={2}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Distribution par Filière</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={distributionData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={(entry) => `${entry.name}: ${entry.value}`}
-                      outerRadius={80}
-                      fill="hsl(var(--primary))"
-                      dataKey="value"
-                    >
-                      {distributionData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Taux d'Occupation des Salles</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={occupationSallesData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="jour" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="taux" fill="hsl(var(--accent))" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="financier" className="space-y-4">
-          <div className="grid gap-6 md:grid-cols-2">
-            <Card className="md:col-span-2">
-              <CardHeader>
-                <CardTitle>Santé Financière - Recettes vs Dépenses (en millions FCFA)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={350}>
-                  <LineChart data={santeFinanciereData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="mois" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line
-                      type="monotone"
-                      dataKey="recettes"
-                      stroke="hsl(var(--primary))"
-                      strokeWidth={2}
-                      name="Recettes"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="depenses"
-                      stroke="hsl(var(--destructive))"
-                      strokeWidth={2}
-                      name="Dépenses"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Taux de Recouvrement</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Paiements reçus</span>
-                    <span className="text-2xl font-bold text-foreground">92.5%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full bg-primary transition-all"
-                      style={{ width: "92.5%" }}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 mt-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Payé</p>
-                      <p className="text-xl font-bold text-success">786M FCFA</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">En attente</p>
-                      <p className="text-xl font-bold text-destructive">64M FCFA</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Répartition des Revenus</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-foreground">Scolarité</span>
-                    <span className="text-sm font-medium">620M (73%)</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full bg-primary" style={{ width: "73%" }} />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-foreground">Formations continues</span>
-                    <span className="text-sm font-medium">150M (18%)</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full bg-secondary" style={{ width: "18%" }} />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-foreground">Services divers</span>
-                    <span className="text-sm font-medium">80M (9%)</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full bg-accent" style={{ width: "9%" }} />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="ressources" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Utilisation des Ressources</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-6 md:grid-cols-2">
-                <div className="space-y-4">
-                  <h3 className="font-medium text-foreground">Salles de Cours</h3>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm text-muted-foreground">Taux moyen d'occupation</span>
-                        <span className="text-sm font-medium">82%</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full bg-primary" style={{ width: "82%" }} />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Salles disponibles</p>
-                        <p className="text-lg font-bold text-foreground">45</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Utilisation journalière</p>
-                        <p className="text-lg font-bold text-foreground">37</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h3 className="font-medium text-foreground">Ratio Enseignants/Étudiants</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Ratio actuel</span>
-                      <span className="text-2xl font-bold text-foreground">1:28</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Enseignants</p>
-                        <p className="text-lg font-bold text-foreground">44</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Étudiants</p>
-                        <p className="text-lg font-bold text-foreground">1,234</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="prediction" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
-                Étudiants à Risque d'Échec (Machine Learning)
-              </CardTitle>
-              <p className="text-sm text-muted-foreground mt-2">
-                Prédiction basée sur l'analyse des absences, notes, participation et paiements
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {etudiantsRisqueData.map((etudiant, index) => (
-                  <div
-                    key={index}
-                    className="flex items-start justify-between border-b border-border pb-4 last:border-0"
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-medium text-foreground">{etudiant.nom}</p>
-                        <Badge
-                          variant={
-                            etudiant.risque > 75
-                              ? "destructive"
-                              : etudiant.risque > 60
-                              ? "secondary"
-                              : "default"
-                          }
-                        >
-                          Risque: {etudiant.risque}%
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mb-2">{etudiant.filiere}</p>
-                      <p className="text-sm text-foreground">{etudiant.facteurs}</p>
-                    </div>
-                    <div className="ml-4">
-                      <div className="w-20 h-20 rounded-full border-4 border-primary/20 flex items-center justify-center">
-                        <span className="text-xl font-bold text-destructive">
-                          {etudiant.risque}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-6 p-4 bg-muted rounded-lg">
-                <p className="text-sm text-muted-foreground">
-                  <strong>Note:</strong> Cette fonctionnalité utilise un modèle de Machine Learning
-                  pour prédire les étudiants à risque. Les recommandations incluent un suivi
-                  personnalisé, des sessions de tutorat et un accompagnement renforcé.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-3xl font-bold text-foreground">Analytics & Business Intelligence</h1><p className="mt-1 text-muted-foreground">Indicateurs calculés à partir des données actuellement enregistrées dans l'API.</p></div><Button variant="outline" onClick={load} disabled={loading}><RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />Actualiser</Button></div>
+      {error && <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Erreur backend</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
+      {loading ? <div className="flex items-center justify-center gap-2 p-16 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Calcul des indicateurs...</div> : <>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Étudiants</CardTitle><Users className="h-4 w-4 text-primary" /></CardHeader><CardContent><p className="text-2xl font-bold">{students.length}</p><p className="text-xs text-muted-foreground">Dossiers enregistrés</p></CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Filières</CardTitle><GraduationCap className="h-4 w-4 text-emerald-600" /></CardHeader><CardContent><p className="text-2xl font-bold">{filieres.length}</p><p className="text-xs text-muted-foreground">Référentiel actuel</p></CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Encaissé</CardTitle><DollarSign className="h-4 w-4 text-amber-600" /></CardHeader><CardContent><p className="text-2xl font-bold">{totalPaid.toLocaleString("fr-FR")} {currencyLabel}</p><p className="text-xs text-muted-foreground">{payments.length} paiement(s)</p></CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Moyenne des notes</CardTitle><BarChart3 className="h-4 w-4 text-violet-600" /></CardHeader><CardContent><p className="text-2xl font-bold">{averageNote ? `${averageNote.toFixed(2)}/20` : "—"}</p><p className="text-xs text-muted-foreground">{notes.length} note(s)</p></CardContent></Card>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card><CardHeader><CardTitle>Répartition des étudiants par filière</CardTitle><CardDescription>Calculée depuis les dossiers étudiants.</CardDescription></CardHeader><CardContent className="space-y-4">{filiereDistribution.length === 0 ? <p className="text-sm text-muted-foreground">Aucun étudiant enregistré.</p> : filiereDistribution.map((item) => <div key={item.name}><div className="mb-1 flex justify-between text-sm"><span>{item.name}</span><span className="font-mono">{item.value}</span></div><Progress value={students.length ? (item.value / students.length) * 100 : 0} /></div>)}</CardContent></Card>
+          <Card><CardHeader><CardTitle>Santé financière</CardTitle><CardDescription>Montants des factures et paiements enregistrés.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex justify-between text-sm"><span>Facturé</span><span className="font-mono">{totalInvoiced.toLocaleString("fr-FR")} {currencyLabel}</span></div><div className="flex justify-between text-sm"><span>Encaissé</span><span className="font-mono text-emerald-600">{totalPaid.toLocaleString("fr-FR")} {currencyLabel}</span></div><div className="flex justify-between text-sm"><span>Taux de recouvrement</span><span className="font-mono font-semibold">{recoveryRate}%</span></div><Progress value={Math.min(100, recoveryRate)} /><p className="text-xs text-muted-foreground">Les historiques et prévisions ne sont pas simulés : ils devront provenir d'un module de reporting backend.</p></CardContent></Card>
+        </div>
+        <Card><CardHeader><CardTitle>Sessions et volumes</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>Session</TableHead><TableHead>Code</TableHead><TableHead>Statut</TableHead><TableHead>Étudiants rattachés</TableHead></TableRow></TableHeader><TableBody>{sessions.length === 0 ? <TableRow><TableCell colSpan={4} className="py-8 text-center text-muted-foreground">Aucune session.</TableCell></TableRow> : sessions.map((session) => <TableRow key={session.id}><TableCell>{session.nom}</TableCell><TableCell className="font-mono text-xs">{session.code}</TableCell><TableCell><Badge variant={session.statut === "active" ? "default" : "secondary"}>{session.statut}</Badge></TableCell><TableCell>{students.filter((student) => student.session_id === session.id).length}</TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
+      </>}
     </div>
   );
 };

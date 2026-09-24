@@ -12,6 +12,7 @@ import { Plus, Search, Eye, Pencil, Trash2, BookOpen, AlertCircle, RefreshCw } f
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { structureApi, extractErrorMessage } from "@/services/apiClient";
+import type { Matiere, TeachingUnit } from "@/services/apiTypes";
 
 interface UE {
   id: string;
@@ -22,16 +23,18 @@ interface UE {
   coefficient: number;
   heures: number;
   filiere: string;
+  filiere_id: string;
   niveau: string;
   semestre: string;
   responsable?: string;
   nbMatieres?: number;
-  matieres?: any[];
+  matieres?: Matiere[];
 }
 
 export default function UnitesEnseignement() {
   const navigate = useNavigate();
   const [ues, setUes] = useState<UE[]>([]);
+  const [filieres, setFilieres] = useState<{ id: string; nom: string }[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedUE, setSelectedUE] = useState<UE | null>(null);
@@ -44,24 +47,33 @@ export default function UnitesEnseignement() {
     setLoading(true);
     setError(null);
     try {
-      const data = await structureApi.getUEs();
-      const mapped = (data || []).map((u: any) => ({
+      const [result, filieresResult] = await Promise.all([
+        structureApi.getUEs(),
+        structureApi.getFilieres(),
+      ]);
+      if (result.error || filieresResult.error) {
+        throw new Error(result.error || filieresResult.error || "Impossible de charger les UE.");
+      }
+      const filiereMap = new Map((filieresResult.data || []).map((filiere) => [filiere.id, filiere.nom]));
+      const mapped = (result.data || []).map((u: TeachingUnit) => ({
         id: u.id,
         code: u.code,
         nom: u.nom,
         type: "UE" as const,
-        credits: u.credits ?? 6,
-        coefficient: u.coefficient ?? 3.0,
-        heures: u.heures ?? 45,
-        filiere: u.filiere?.nom || u.filiere_id || "Général",
-        niveau: u.niveau || "Licence 1",
-        semestre: u.semestre || "S1",
-        responsable: u.responsable || "Non assigné",
+        credits: u.credits ?? 0,
+        coefficient: u.coefficient ?? 0,
+        heures: u.heures ?? 0,
+        filiere: filiereMap.get(u.filiere_id) || u.filiere?.nom || "",
+        filiere_id: u.filiere_id || "",
+        niveau: u.niveau || "",
+        semestre: u.semestre || "",
+        responsable: u.responsable || "",
         nbMatieres: Array.isArray(u.matieres) ? u.matieres.length : 0,
         matieres: u.matieres || [],
       }));
       setUes(mapped);
-    } catch (err: any) {
+      setFilieres((filieresResult.data || []) as { id: string; nom: string }[]);
+    } catch (err: unknown) {
       setError(extractErrorMessage(err));
     } finally {
       setLoading(false);
@@ -78,43 +90,36 @@ export default function UnitesEnseignement() {
   );
 
   const handleSaveUE = async (data: Partial<UE>) => {
-    try {
-      if (selectedUE) {
-        await structureApi.updateUE(selectedUE.id, {
-          nom: data.nom,
-          code: data.code,
-          credits: Number(data.credits || 6),
-          coefficient: Number(data.coefficient || 3.0),
-          heures: Number(data.heures || 45),
-          semestre: data.semestre || "S1",
-          niveau: data.niveau || "Licence 1",
-          responsable: data.responsable,
-        });
-        toast.success("UE modifiée avec succès dans la base de données");
-      } else {
-        await structureApi.createUE({
-          nom: data.nom,
-          code: data.code,
-          credits: Number(data.credits || 6),
-          coefficient: Number(data.coefficient || 3.0),
-          heures: Number(data.heures || 45),
-          semestre: data.semestre || "S1",
-          niveau: data.niveau || "Licence 1",
-          responsable: data.responsable,
-          filiere_id: data.filiere || "FIL-01",
-        });
-        toast.success("UE ajoutée avec succès");
-      }
-      setDialogOpen(false);
-      setSelectedUE(null);
-      fetchUEs();
-    } catch (err: any) {
-      toast.error(extractErrorMessage(err));
+    if (!data.nom || !data.code || !data.filiere) {
+      toast.error("Le nom, le code et la filière sont obligatoires.");
+      return;
     }
+    const payload = {
+      nom: data.nom,
+      code: data.code,
+      credits: Number(data.credits),
+      coefficient: Number(data.coefficient),
+      heures: Number(data.heures),
+      semestre: data.semestre || "",
+      niveau: data.niveau || "",
+      responsable: data.responsable || "",
+      filiere_id: data.filiere,
+    };
+    const result = selectedUE
+      ? await structureApi.updateUE(selectedUE.id, payload)
+      : await structureApi.createUE(payload);
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success(selectedUE ? "UE modifiée." : "UE ajoutée.");
+    setDialogOpen(false);
+    setSelectedUE(null);
+    await fetchUEs();
   };
 
   const handleEdit = (ue: UE) => {
-    setSelectedUE(ue);
+    setSelectedUE({ ...ue, filiere: ue.filiere_id });
     setDialogOpen(true);
   };
 
@@ -131,7 +136,7 @@ export default function UnitesEnseignement() {
       setDeleteDialogOpen(false);
       setUeToDelete(null);
       fetchUEs();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(extractErrorMessage(err));
     }
   };
@@ -280,6 +285,7 @@ export default function UnitesEnseignement() {
         onOpenChange={setDialogOpen}
         onSave={handleSaveUE}
         ue={selectedUE}
+        filieres={filieres}
       />
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

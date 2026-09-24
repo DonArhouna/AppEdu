@@ -59,15 +59,20 @@ const SetupWizard = lazy(() => import("./pages/SetupWizard"));
 const Deconnexion = lazy(() => import("./pages/Deconnexion"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
-import { RBACProvider } from "@/contexts/RBACContext";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { RBACProvider, type UserRole } from "@/contexts/RBACContext";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
+const academicStructureRoles: UserRole[] = ["ADMIN", "DIRECTEUR_ETUDES"];
+const pedagogyRoles: UserRole[] = ["ADMIN", "DIRECTEUR_ETUDES", "ENSEIGNANT"];
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <RBACProvider>
+      <AuthProvider>
+        <RBACProvider>
         <Toaster />
         <Sonner />
         <BrowserRouter>
@@ -83,8 +88,9 @@ const App = () => (
             <Route
               path="/*"
               element={
-                <MainLayout>
-                  <Routes>
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Routes>
                     {/* Dashboard Global */}
                     <Route path="/" element={<Dashboard />} />
 
@@ -97,8 +103,22 @@ const App = () => (
                         </ProtectedRoute>
                       }
                     />
-                    <Route path="/etudiants" element={<Etudiants />} />
-                    <Route path="/etudiants/:id" element={<StudentDetail />} />
+                    <Route
+                       path="/etudiants"
+                       element={
+                         <ProtectedRoute allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "SECRETARIAT", "COMPTABILITE", "ENSEIGNANT"]}>
+                           <Etudiants />
+                         </ProtectedRoute>
+                       }
+                     />
+                    <Route
+                       path="/etudiants/:id"
+                       element={
+                         <ProtectedRoute allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "SECRETARIAT", "COMPTABILITE", "ENSEIGNANT"]}>
+                           <StudentDetail />
+                         </ProtectedRoute>
+                       }
+                     />
                     <Route
                       path="/validation"
                       element={
@@ -109,13 +129,13 @@ const App = () => (
                     />
 
                     {/* Module 2: Gestion Pédagogique */}
-                    <Route path="/filieres" element={<Filieres />} />
-                    <Route path="/filieres/:id" element={<FiliereDetail />} />
-                    <Route path="/matieres" element={<Matieres />} />
-                    <Route path="/matieres/:id" element={<MatiereDetail />} />
-                    <Route path="/ue" element={<UnitesEnseignement />} />
-                    <Route path="/ue/:id" element={<UEDetail />} />
-                    <Route path="/emplois-du-temps" element={<EmploisDuTemps />} />
+                    <Route path="/filieres" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Filieres /></ProtectedRoute>} />
+                    <Route path="/filieres/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><FiliereDetail /></ProtectedRoute>} />
+                    <Route path="/matieres" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Matieres /></ProtectedRoute>} />
+                    <Route path="/matieres/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><MatiereDetail /></ProtectedRoute>} />
+                    <Route path="/ue" element={<ProtectedRoute allowedRoles={academicStructureRoles}><UnitesEnseignement /></ProtectedRoute>} />
+                    <Route path="/ue/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><UEDetail /></ProtectedRoute>} />
+                    <Route path="/emplois-du-temps" element={<ProtectedRoute allowedRoles={pedagogyRoles}><EmploisDuTemps /></ProtectedRoute>} />
                     <Route
                       path="/notes"
                       element={
@@ -124,14 +144,21 @@ const App = () => (
                         </ProtectedRoute>
                       }
                     />
-                    <Route path="/ressources" element={<Ressources />} />
-                    <Route path="/absences" element={<Absences />} />
+                    <Route path="/ressources" element={<ProtectedRoute allowedRoles={pedagogyRoles}><Ressources /></ProtectedRoute>} />
+                    <Route path="/absences" element={<ProtectedRoute allowedRoles={pedagogyRoles}><Absences /></ProtectedRoute>} />
 
                     {/* Module 3: RH & Enseignants */}
-                    <Route path="/enseignants" element={<Enseignants />} />
-                    <Route path="/personnel" element={<Personnel />} />
-                    <Route path="/personnel/:id" element={<PersonnelDetail />} />
-                    <Route path="/portail-enseignant" element={<PortailEnseignant />} />
+                    <Route path="/enseignants" element={<ProtectedRoute allowedRoles={["ADMIN", "SECRETARIAT"]}><Enseignants /></ProtectedRoute>} />
+                    <Route path="/personnel" element={<ProtectedRoute allowedRoles={["ADMIN", "SECRETARIAT"]}><Personnel /></ProtectedRoute>} />
+                    <Route path="/personnel/:id" element={<ProtectedRoute allowedRoles={["ADMIN", "SECRETARIAT"]}><PersonnelDetail /></ProtectedRoute>} />
+                    <Route
+                       path="/portail-enseignant"
+                       element={
+                         <ProtectedRoute allowedRoles={["ENSEIGNANT"]} allowSuperuser={false}>
+                           <PortailEnseignant />
+                         </ProtectedRoute>
+                       }
+                     />
 
                     {/* Module 4: Gestion Financière */}
                     <Route
@@ -184,11 +211,18 @@ const App = () => (
                     />
 
                     {/* Module 5: Espace Étudiant & Messagerie */}
-                    <Route path="/espace-etudiant" element={<EspaceEtudiant />} />
+                    <Route
+                       path="/espace-etudiant"
+                       element={
+                         <ProtectedRoute allowedRoles={["ETUDIANT"]} allowSuperuser={false}>
+                           <EspaceEtudiant />
+                         </ProtectedRoute>
+                       }
+                     />
                     <Route path="/messagerie" element={<Messagerie />} />
 
                     {/* Module 6: Analytics & BI */}
-                    <Route path="/analytics" element={<Analytics />} />
+                    <Route path="/analytics" element={<ProtectedRoute allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "COMPTABILITE"]}><Analytics /></ProtectedRoute>} />
 
                     {/* Module 7: Paramètres & Structure (Administration) */}
                     <Route
@@ -207,16 +241,16 @@ const App = () => (
                         </ProtectedRoute>
                       }
                     />
-                    <Route path="/campus" element={<Campus />} />
-                    <Route path="/campus/:id" element={<CampusDetail />} />
-                    <Route path="/sites" element={<Sites />} />
-                    <Route path="/sites/:id" element={<SiteDetail />} />
-                    <Route path="/salles" element={<Salles />} />
-                    <Route path="/salles/:id" element={<SalleDetail />} />
-                    <Route path="/departements" element={<Departements />} />
-                    <Route path="/departements/:id" element={<DepartementDetail />} />
-                    <Route path="/promotions" element={<Promotions />} />
-                    <Route path="/promotions/:id" element={<PromotionDetail />} />
+                    <Route path="/campus" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Campus /></ProtectedRoute>} />
+                    <Route path="/campus/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><CampusDetail /></ProtectedRoute>} />
+                    <Route path="/sites" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Sites /></ProtectedRoute>} />
+                    <Route path="/sites/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><SiteDetail /></ProtectedRoute>} />
+                    <Route path="/salles" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Salles /></ProtectedRoute>} />
+                    <Route path="/salles/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><SalleDetail /></ProtectedRoute>} />
+                    <Route path="/departements" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Departements /></ProtectedRoute>} />
+                    <Route path="/departements/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><DepartementDetail /></ProtectedRoute>} />
+                    <Route path="/promotions" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Promotions /></ProtectedRoute>} />
+                    <Route path="/promotions/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><PromotionDetail /></ProtectedRoute>} />
                     <Route
                       path="/sessions"
                       element={
@@ -249,15 +283,17 @@ const App = () => (
 
                     {/* 404 */}
                     <Route path="*" element={<NotFound />} />
-                  </Routes>
-                </MainLayout>
+                    </Routes>
+                  </MainLayout>
+                </ProtectedRoute>
               }
             />
           </Routes>
         </Suspense>
       </BrowserRouter>
-    </RBACProvider>
-  </TooltipProvider>
+        </RBACProvider>
+      </AuthProvider>
+    </TooltipProvider>
 </QueryClientProvider>
 );
 

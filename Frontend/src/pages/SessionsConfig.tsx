@@ -55,14 +55,18 @@ import {
   Sliders
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  AcademicSession,
-  PaymentPeriod,
-  getAcademicSessions,
-  saveAcademicSession,
-  deleteAcademicSession,
-  getStudentCountForSession,
-} from "@/services/academicSessionService";
+import { etudiantsApi, extractErrorMessage, sessionsApi } from "@/services/apiClient";
+import type { AcademicSession as ApiSession, SessionPeriod } from "@/services/apiTypes";
+import type { AcademicSession, PaymentPeriod } from "@/services/academicSessionService";
+
+const getCurrentAcademicYear = () => {
+  const now = new Date();
+  const startYear = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${startYear}-${startYear + 1}`;
+};
+
+const normalizeSessionStatus = (value: string): AcademicSession["statut"] =>
+  value === "planifiee" || value === "cloturee" ? value : "active";
 
 const MOIS_LIST = [
   "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
@@ -75,43 +79,82 @@ export const SessionsConfig = () => {
   const [editingSession, setEditingSession] = useState<AcademicSession | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<AcademicSession | null>(null);
+  const [studentCounts, setStudentCounts] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
 
   // Form states
   const [nom, setNom] = useState("");
   const [code, setCode] = useState("");
-  const [anneeAcademique, setAnneeAcademique] = useState("2025-2026");
-  const [dateDebut, setDateDebut] = useState("2025-09-01");
-  const [dateFin, setDateFin] = useState("2026-06-30");
+  const [anneeAcademique, setAnneeAcademique] = useState(getCurrentAcademicYear());
+  const [dateDebut, setDateDebut] = useState("");
+  const [dateFin, setDateFin] = useState("");
   const [statut, setStatut] = useState<"active" | "planifiee" | "cloturee">("active");
   const [description, setDescription] = useState("");
   const [periodes, setPeriodes] = useState<PaymentPeriod[]>([]);
+  const [saving, setSaving] = useState(false);
 
-  const loadData = () => {
-    setSessions(getAcademicSessions());
+  const loadData = async () => {
+    setLoading(true);
+    const [sessionsResult, studentsResult] = await Promise.all([
+      sessionsApi.getAll(),
+      etudiantsApi.getAll(),
+    ]);
+    if (sessionsResult.error || studentsResult.error || !sessionsResult.data) {
+      toast.error(
+        extractErrorMessage(
+          sessionsResult.error || studentsResult.error,
+          "Impossible de charger les sessions académiques."
+        )
+      );
+      setLoading(false);
+      return;
+    }
+
+    const mappedSessions: AcademicSession[] = sessionsResult.data.map((session: ApiSession) => ({
+      id: session.id,
+      nom: session.nom,
+      code: session.code,
+      anneeAcademique: session.annee_academique,
+      dateDebut: session.date_debut,
+      dateFin: session.date_fin,
+      statut: normalizeSessionStatus(session.statut),
+      description: session.description || "",
+      periodes: (session.periodes || []).map((period: SessionPeriod) => ({
+        id: period.id,
+        nom: period.nom,
+        mois: period.mois,
+        dateEcheance: period.date_echeance || "",
+        montantEstime: period.montant_estime,
+        pourcentage: period.pourcentage,
+        ordre: period.ordre,
+      })),
+    }));
+    setSessions(mappedSessions);
+
+    const counts: Record<string, number> = {};
+    for (const student of studentsResult.data || []) {
+      if (student.session_id) {
+        counts[student.session_id] = (counts[student.session_id] || 0) + 1;
+      }
+    }
+    setStudentCounts(counts);
+    setLoading(false);
   };
 
   useEffect(() => {
-    loadData();
-    const handleUpdate = () => loadData();
-    window.addEventListener("emp_sessions_changed", handleUpdate);
-    return () => window.removeEventListener("emp_sessions_changed", handleUpdate);
+    void loadData();
   }, []);
 
   const openCreateDialog = () => {
     setEditingSession(null);
     setNom("");
-    setCode(`SES-${new Date().getFullYear().toString().slice(-2)}-${Math.floor(10 + Math.random() * 90)}`);
-    setAnneeAcademique("2025-2026");
-    setDateDebut("2025-09-01");
-    setDateFin("2026-06-30");
+    setCode("");
+    setAnneeAcademique(getCurrentAcademicYear());
+    setDateDebut("");
+    setDateFin("");
     setStatut("active");
     setDescription("");
-    // Default 3 Tranches template
-    setPeriodes([
-      { id: `per-${Date.now()}-1`, nom: "Tranche 1 (Octobre)", mois: "Octobre", dateEcheance: "2025-10-15", pourcentage: 40, ordre: 1 },
-      { id: `per-${Date.now()}-2`, nom: "Tranche 2 (Janvier)", mois: "Janvier", dateEcheance: "2026-01-15", pourcentage: 30, ordre: 2 },
-      { id: `per-${Date.now()}-3`, nom: "Tranche 3 (Avril)", mois: "Avril", dateEcheance: "2026-04-15", pourcentage: 30, ordre: 3 },
-    ]);
+    setPeriodes([]);
     setDialogOpen(true);
   };
 
@@ -128,68 +171,24 @@ export const SessionsConfig = () => {
     setDialogOpen(true);
   };
 
-  const handleApplyPreset = (presetType: "3tranches" | "4tranches" | "10mensuel" | "2semestres") => {
-    const ts = Date.now();
-    if (presetType === "3tranches") {
-      setPeriodes([
-        { id: `per-${ts}-1`, nom: "Tranche 1 (Octobre)", mois: "Octobre", dateEcheance: "2025-10-15", pourcentage: 40, ordre: 1 },
-        { id: `per-${ts}-2`, nom: "Tranche 2 (Janvier)", mois: "Janvier", dateEcheance: "2026-01-15", pourcentage: 30, ordre: 2 },
-        { id: `per-${ts}-3`, nom: "Tranche 3 (Avril)", mois: "Avril", dateEcheance: "2026-04-15", pourcentage: 30, ordre: 3 },
-      ]);
-      toast.success("Modèle 3 Tranches appliqué.");
-    } else if (presetType === "4tranches") {
-      setPeriodes([
-        { id: `per-${ts}-1`, nom: "Tranche 1 (Février)", mois: "Février", dateEcheance: "2026-02-15", pourcentage: 30, ordre: 1 },
-        { id: `per-${ts}-2`, nom: "Tranche 2 (Avril)", mois: "Avril", dateEcheance: "2026-04-15", pourcentage: 25, ordre: 2 },
-        { id: `per-${ts}-3`, nom: "Tranche 3 (Juin)", mois: "Juin", dateEcheance: "2026-06-15", pourcentage: 25, ordre: 3 },
-        { id: `per-${ts}-4`, nom: "Tranche 4 (Août)", mois: "Août", dateEcheance: "2026-08-15", pourcentage: 20, ordre: 4 },
-      ]);
-      toast.success("Modèle 4 Tranches appliqué.");
-    } else if (presetType === "2semestres") {
-      setPeriodes([
-        { id: `per-${ts}-1`, nom: "Semestre 1 (Octobre)", mois: "Octobre", dateEcheance: "2025-10-20", pourcentage: 50, ordre: 1 },
-        { id: `per-${ts}-2`, nom: "Semestre 2 (Février)", mois: "Février", dateEcheance: "2026-02-20", pourcentage: 50, ordre: 2 },
-      ]);
-      toast.success("Modèle 2 Semestres appliqué.");
-    } else if (presetType === "10mensuel") {
-      const months = ["Septembre", "Octobre", "Novembre", "Décembre", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin"];
-      setPeriodes(
-        months.map((m, idx) => ({
-          id: `per-${ts}-${idx}`,
-          nom: `Mensualité ${m}`,
-          mois: m,
-          dateEcheance: `2025-${String(idx + 9 > 12 ? idx - 3 : idx + 9).padStart(2, "0")}-10`,
-          pourcentage: 10,
-          ordre: idx + 1,
-        }))
-      );
-      toast.success("Modèle 10 Mensualités appliqué.");
-    }
-  };
-
   const handleAddPeriod = () => {
     const nextOrdre = periodes.length + 1;
     const newPeriod: PaymentPeriod = {
-      id: `per-${Date.now()}`,
-      nom: `Tranche ${nextOrdre}`,
-      mois: "Octobre",
-      dateEcheance: new Date().toISOString().split("T")[0],
+      id: crypto.randomUUID(),
+      nom: "",
+      mois: "",
+      dateEcheance: "",
       pourcentage: 0,
       ordre: nextOrdre,
     };
     setPeriodes([...periodes, newPeriod]);
   };
 
-  const handleUpdatePeriod = (id: string, field: keyof PaymentPeriod, value: any) => {
+  const handleUpdatePeriod = (id: string, field: keyof PaymentPeriod, value: string | number) => {
     setPeriodes(
       periodes.map((p) => {
         if (p.id === id) {
-          const updated = { ...p, [field]: value };
-          if (field === "mois" && !p.nom.startsWith("Tranche personnalisée")) {
-            // Auto update name if simple
-            updated.nom = `Tranche ${p.ordre} (${value})`;
-          }
-          return updated;
+          return { ...p, [field]: value };
         }
         return p;
       })
@@ -200,50 +199,74 @@ export const SessionsConfig = () => {
     setPeriodes(periodes.filter((p) => p.id !== id).map((p, idx) => ({ ...p, ordre: idx + 1 })));
   };
 
-  const handleSaveSession = (e: React.FormEvent) => {
+  const handleSaveSession = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!nom.trim()) {
-      toast.error("Veuillez saisir un nom pour la session.");
+    if (!nom.trim() || !code.trim() || !anneeAcademique.trim() || !dateDebut || !dateFin) {
+      toast.error("Nom, code, année et dates sont obligatoires.");
       return;
     }
-
     if (periodes.length === 0) {
-      toast.error("Veuillez configurer au moins une période de paiement pour cette session.");
+      toast.error("Ajoutez au moins une période de paiement.");
+      return;
+    }
+    if (periodes.some((period) => !period.nom || !period.mois || !period.dateEcheance)) {
+      toast.error("Chaque période doit avoir un libellé, un mois et une date d'échéance.");
       return;
     }
 
-    const sessionData: AcademicSession = {
-      id: editingSession ? editingSession.id : `SES-${Date.now()}`,
+    const payload = {
       nom: nom.trim(),
-      code: code.trim() || `SES-${Date.now()}`,
-      anneeAcademique,
-      dateDebut,
-      dateFin,
+      code: code.trim().toUpperCase(),
+      annee_academique: anneeAcademique.trim(),
+      date_debut: dateDebut,
+      date_fin: dateFin,
       statut,
       description: description.trim(),
-      periodes,
+      periodes: periodes.map((period) => ({
+        id: period.id,
+        nom: period.nom.trim(),
+        mois: period.mois,
+        date_echeance: period.dateEcheance,
+        montant_estime: period.montantEstime ?? null,
+        pourcentage: period.pourcentage ?? null,
+        ordre: period.ordre,
+      })),
     };
 
-    saveAcademicSession(sessionData);
-    toast.success(editingSession ? "Session académique mise à jour avec succès !" : "Nouvelle session académique créée !");
+    setSaving(true);
+    const result = editingSession
+      ? await sessionsApi.update(editingSession.id, payload)
+      : await sessionsApi.create(payload);
+    setSaving(false);
+    if (result.error) {
+      toast.error(extractErrorMessage(result.error));
+      return;
+    }
+
+    toast.success(editingSession ? "Session académique mise à jour." : "Session académique créée.");
     setDialogOpen(false);
+    await loadData();
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!sessionToDelete) return;
-    const attachedCount = getStudentCountForSession(sessionToDelete.id);
-    if (attachedCount > 0) {
-      toast.warning(`Attention : ${attachedCount} étudiant(s) sont encore rattachés à cette session. Ils devront être réassignés.`);
+    const result = await sessionsApi.delete(sessionToDelete.id);
+    if (result.error) {
+      toast.error(extractErrorMessage(result.error));
+      return;
     }
-    deleteAcademicSession(sessionToDelete.id);
-    toast.success(`La session "${sessionToDelete.nom}" a été supprimée.`);
+    toast.success("Session académique supprimée.");
     setDeleteDialogOpen(false);
     setSessionToDelete(null);
+    await loadData();
   };
 
   const totalActiveSessions = sessions.filter((s) => s.statut === "active").length;
-  const totalStudents = sessions.reduce((acc, s) => acc + getStudentCountForSession(s.id), 0);
+  const totalStudents = sessions.reduce(
+    (total, session) => total + (studentCounts[session.id] || 0),
+    0
+  );
   const totalPeriods = sessions.reduce((acc, s) => acc + s.periodes.length, 0);
 
   return (
@@ -313,8 +336,24 @@ export const SessionsConfig = () => {
 
       {/* ── Sessions List Cards ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {sessions.map((session) => {
-          const studentCount = getStudentCountForSession(session.id);
+        {loading ? (
+          <Card className="col-span-full">
+            <CardContent className="py-12 text-center text-sm text-muted-foreground">
+              Chargement des sessions depuis l'API...
+            </CardContent>
+          </Card>
+        ) : sessions.length === 0 ? (
+          <Card className="col-span-full border-dashed">
+            <CardContent className="py-12 text-center">
+              <CalendarDays className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" />
+              <p className="font-medium">Aucune session enregistrée</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Créez la première session depuis cette page.
+              </p>
+            </CardContent>
+          </Card>
+        ) : sessions.map((session) => {
+          const studentCount = studentCounts[session.id] || 0;
           const isActif = session.statut === "active";
 
           return (
@@ -454,7 +493,7 @@ export const SessionsConfig = () => {
                   id="session-nom"
                   value={nom}
                   onChange={(e) => setNom(e.target.value)}
-                  placeholder="Ex : Session Principale 2025-2026, Session Septembre..."
+                  placeholder="Nom de la session"
                   required
                 />
               </div>
@@ -465,23 +504,20 @@ export const SessionsConfig = () => {
                   id="session-code"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
-                  placeholder="Ex : SES-25-26-A"
+                  placeholder="Code unique de la session"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="session-annee" className="text-xs font-bold">Année Académique</Label>
-                <Select value={anneeAcademique} onValueChange={setAnneeAcademique}>
-                  <SelectTrigger id="session-annee">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="2024-2025">2024-2025</SelectItem>
-                    <SelectItem value="2025-2026">2025-2026</SelectItem>
-                    <SelectItem value="2026-2027">2026-2027</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="session-annee" className="text-xs font-bold">Année Académique *</Label>
+                <Input
+                  id="session-annee"
+                  value={anneeAcademique}
+                  onChange={(e) => setAnneeAcademique(e.target.value)}
+                  placeholder="AAAA-AAAA"
+                  required
+                />
               </div>
 
               <div className="space-y-2">
@@ -508,7 +544,7 @@ export const SessionsConfig = () => {
 
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="session-statut" className="text-xs font-bold">Statut de la session</Label>
-                <Select value={statut} onValueChange={(val: any) => setStatut(val)}>
+                <Select value={statut} onValueChange={(value) => setStatut(value as typeof statut)}>
                   <SelectTrigger id="session-statut">
                     <SelectValue />
                   </SelectTrigger>
@@ -557,50 +593,6 @@ export const SessionsConfig = () => {
                 </Button>
               </div>
 
-              {/* Quick Presets */}
-              <div className="flex flex-wrap items-center gap-1.5 p-2.5 rounded-xl bg-muted/40 border text-xs">
-                <span className="font-semibold text-muted-foreground mr-1 text-[11px] flex items-center gap-1">
-                  <Sparkles className="h-3 w-3 text-amber-500" />
-                  Modèles :
-                </span>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-6 text-[11px] px-2"
-                  onClick={() => handleApplyPreset("3tranches")}
-                >
-                  3 Tranches (Oct, Jan, Avr)
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-6 text-[11px] px-2"
-                  onClick={() => handleApplyPreset("4tranches")}
-                >
-                  4 Tranches Décalées
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-6 text-[11px] px-2"
-                  onClick={() => handleApplyPreset("2semestres")}
-                >
-                  2 Semestres
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-6 text-[11px] px-2"
-                  onClick={() => handleApplyPreset("10mensuel")}
-                >
-                  10 Mensualités (Sept-Juin)
-                </Button>
-              </div>
-
               {/* Periods editable list */}
               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                 {periodes.map((p, idx) => (
@@ -624,7 +616,7 @@ export const SessionsConfig = () => {
 
                       <Select
                         value={p.mois}
-                        onValueChange={(val) => handleUpdatePeriod(p.id, "mois", val)}
+                        onValueChange={(value) => handleUpdatePeriod(p.id, "mois", value)}
                       >
                         <SelectTrigger className="h-8 text-xs">
                           <SelectValue placeholder="Mois" />

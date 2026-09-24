@@ -9,7 +9,9 @@ from app.models.session_academique import SessionAcademique, PeriodePaiement
 from app.models.structure import Campus, Departement, Filiere, UniteEnseignement, Matiere
 from app.models.etudiant import Etudiant
 from app.models.pedagogie import Cours, Examen, Note, Absence
-from app.models.finance import Facture, Paiement, Recu
+from app.models.admissions import Candidature, PieceCandidature, DecisionAdmission
+from app.models.admission_views import VueAdmissions
+from app.models.finance import GrilleTarifaire, Facture, Paiement, Recu
 
 __all__ = [
     "Base",
@@ -30,6 +32,11 @@ __all__ = [
     "Examen",
     "Note",
     "Absence",
+    "Candidature",
+    "PieceCandidature",
+    "DecisionAdmission",
+    "VueAdmissions",
+    "GrilleTarifaire",
     "Facture",
     "Paiement",
     "Recu",

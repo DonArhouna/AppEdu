@@ -11,12 +11,15 @@ import { FileText, Eye, DollarSign, CheckCircle2, Clock, AlertTriangle, RefreshC
 import { toast } from "sonner";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { BalanceAgee } from "@/components/finance/BalanceAgee";
-import { financesApi } from "@/services/apiClient";
+import { financesApi, etudiantsApi, setupApi } from "@/services/apiClient";
+import type { Invoice } from "@/services/apiTypes";
 
 interface Facture {
   id: string;
   numeroFacture: string;
   etudiantId: string;
+  etudiantNom: string;
+  matricule: string;
   montantTotal: number;
   montantPaye: number;
   soldeRestant: number;
@@ -32,34 +35,45 @@ const Factures = () => {
   const [error, setError] = useState<string | null>(null);
   const [filterStatut, setFilterStatut] = useState<string>("tous");
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const [currency, setCurrency] = useState("");
 
   const loadFactures = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await financesApi.getFactures();
-      if (res.error) {
-        setError(res.error);
+      const [res, studentsResult, setupResult] = await Promise.all([
+        financesApi.getFactures(),
+        etudiantsApi.getAll(),
+        setupApi.getStatus(),
+      ]);
+      if (res.error || studentsResult.error) {
+        setError(res.error || studentsResult.error || "Impossible de charger les factures.");
         setFactures([]);
       } else {
-        const raw = res.data || [];
+        const students = studentsResult.data || [];
         setFactures(
-          raw.map((f: any) => ({
-            id: f.id,
-            numeroFacture: f.numero_facture || f.id,
-            etudiantId: f.etudiant_id,
-            montantTotal: Number(f.montant_total) || 0,
-            montantPaye: Number(f.montant_paye) || 0,
-            soldeRestant: Number(f.solde_restant) || 0,
-            dateEmission: f.created_at ? f.created_at.substring(0, 10) : "2025-10-01",
-            dateEcheance: f.date_echeance || "2026-06-30",
-            statut: f.statut || "en_attente",
-            description: f.description,
-          }))
+          (res.data || []).map((f: Invoice) => {
+            const student = students.find((item) => item.id === f.etudiant_id);
+            return {
+              id: f.id,
+              numeroFacture: f.numero_facture || f.id,
+              etudiantId: f.etudiant_id,
+              etudiantNom: student ? `${student.prenom || ""} ${student.nom || ""}`.trim() : "Étudiant introuvable",
+              matricule: student?.matricule || "",
+              montantTotal: Number(f.montant_total) || 0,
+              montantPaye: Number(f.montant_paye) || 0,
+              soldeRestant: Number(f.reste_a_payer ?? (f.montant_total - f.montant_paye)) || 0,
+              dateEmission: f.date_emission || "",
+              dateEcheance: f.date_echeance || "",
+              statut: f.statut || "",
+              description: f.description,
+            };
+          })
         );
+        setCurrency(setupResult.data?.devise || "");
       }
-    } catch (err: any) {
-      setError(err?.message || "Erreur de connexion.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur de connexion.");
     } finally {
       setLoading(false);
     }
@@ -77,7 +91,9 @@ const Factures = () => {
     const matchStatut = filterStatut === "tous" || f.statut === filterStatut;
     const matchSearch =
       f.numeroFacture.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      f.etudiantId.toLowerCase().includes(searchTerm.toLowerCase());
+      f.etudiantId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      f.etudiantNom.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      f.matricule.toLowerCase().includes(searchTerm.toLowerCase());
     return matchStatut && matchSearch;
   });
 
@@ -129,21 +145,21 @@ const Factures = () => {
       <div className="grid gap-4 md:grid-cols-3">
         <KpiCard
           title="Total Facturé"
-          value={`${totalFacture.toLocaleString("fr-FR")} FCFA`}
+          value={`${totalFacture.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`}
           icon={DollarSign}
           trendLabel={`${factures.length} factures générées`}
           colorVariant="primary"
         />
         <KpiCard
           title="Montant Recouvré"
-          value={`${totalPaye.toLocaleString("fr-FR")} FCFA`}
+          value={`${totalPaye.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`}
           icon={CheckCircle2}
           trendLabel={`${totalFacture > 0 ? Math.round((totalPaye / totalFacture) * 100) : 0}% de recouvrement`}
           colorVariant="emerald"
         />
         <KpiCard
           title="Reste à Recouvrer"
-          value={`${totalImpaye.toLocaleString("fr-FR")} FCFA`}
+          value={`${totalImpaye.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`}
           icon={Clock}
           trendLabel="Créances en cours"
           colorVariant="amber"
@@ -219,16 +235,17 @@ const Factures = () => {
                             {facture.numeroFacture}
                           </TableCell>
                           <TableCell className="font-medium text-foreground">
-                            {facture.etudiantId}
+                            <div>{facture.etudiantNom}</div>
+                             {facture.matricule && <div className="font-mono text-[10px] text-muted-foreground">{facture.matricule}</div>}
                           </TableCell>
                           <TableCell className="font-semibold">
-                            {facture.montantTotal.toLocaleString("fr-FR")} FCFA
+                            {facture.montantTotal.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
                           </TableCell>
                           <TableCell className="text-emerald-600 font-medium">
-                            {facture.montantPaye.toLocaleString("fr-FR")} FCFA
+                            {facture.montantPaye.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
                           </TableCell>
                           <TableCell className={facture.soldeRestant > 0 ? "text-amber-600 font-bold" : "text-muted-foreground"}>
-                            {facture.soldeRestant.toLocaleString("fr-FR")} FCFA
+                            {facture.soldeRestant.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             {facture.dateEcheance}

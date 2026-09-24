@@ -14,17 +14,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { BookOpen, Users, Plus, Edit, Trash2, Eye, RefreshCw, AlertCircle, GraduationCap } from "lucide-react";
-import { FiliereDialog } from "@/components/filieres/FiliereDialog";
+import { FiliereDialog, type Filiere } from "@/components/filieres/FiliereDialog";
 import { toast } from "sonner";
 import { structureApi } from "@/services/apiClient";
 
 const Filieres = () => {
-  const [filieres, setFilieres] = useState<any[]>([]);
+  const [filieres, setFilieres] = useState<Filiere[]>([]);
+  const [departements, setDepartements] = useState<{ id: string; nom: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedFiliere, setSelectedFiliere] = useState<any>();
+  const [selectedFiliere, setSelectedFiliere] = useState<Filiere>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [filiereToDelete, setFiliereToDelete] = useState<string | null>(null);
 
@@ -32,15 +33,20 @@ const Filieres = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await structureApi.getFilieres();
-      if (res.error) {
-        setError(res.error);
+      const [res, departementsRes] = await Promise.all([
+        structureApi.getFilieres(),
+        structureApi.getDepartements(),
+      ]);
+      if (res.error || departementsRes.error) {
+        setError(res.error || departementsRes.error || "Impossible de charger les filières.");
         setFilieres([]);
+        setDepartements([]);
       } else {
-        setFilieres(res.data || []);
+        setFilieres((res.data || []) as unknown as Filiere[]);
+        setDepartements((departementsRes.data || []).map((item) => ({ id: item.id, nom: item.nom })));
       }
-    } catch (err: any) {
-      setError(err?.message || "Erreur de connexion au serveur backend.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur de connexion au serveur backend.");
     } finally {
       setLoading(false);
     }
@@ -50,36 +56,45 @@ const Filieres = () => {
     loadFilieres();
   }, []);
 
-  const handleSave = async (filiereData: any) => {
+  const handleSave = async (filiereData: Filiere) => {
     const payload = {
       nom: filiereData.nom,
-      code: filiereData.code || filiereData.nom.substring(0, 3).toUpperCase(),
+      code: filiereData.code,
       description: filiereData.description || "",
-      diplome: filiereData.diplome || "Licence",
-      duree: Number(filiereData.duree) || 3,
+      diplome: filiereData.diplome,
+      duree: Number(filiereData.duree),
       departement_id: filiereData.departement_id || undefined,
     };
 
-    const res = await structureApi.createFiliere(payload);
+    const res = selectedFiliere
+      ? await structureApi.updateFiliere(selectedFiliere.id, payload)
+      : await structureApi.createFiliere(payload);
     if (res.error) {
       toast.error(`Erreur : ${res.error}`);
       return;
     }
-    toast.success("Filière enregistrée avec succès.");
+    toast.success(selectedFiliere ? "Filière mise à jour." : "Filière enregistrée.");
     setDialogOpen(false);
     setSelectedFiliere(undefined);
     await loadFilieres();
   };
 
-  const handleEdit = (filiere: any) => {
+  const handleEdit = (filiere: Filiere) => {
     setSelectedFiliere(filiere);
     setDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    toast.info("La suppression de filière est restreinte aux administrateurs.");
+  const handleDelete = async () => {
+    if (!filiereToDelete) return;
+    const result = await structureApi.deleteFiliere(filiereToDelete);
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success("Filière supprimée.");
     setDeleteDialogOpen(false);
     setFiliereToDelete(null);
+    await loadFilieres();
   };
 
   return (
@@ -127,7 +142,7 @@ const Filieres = () => {
           <GraduationCap className="h-10 w-10 mx-auto text-muted-foreground/40" />
           <p className="font-semibold text-foreground text-base">Aucune filière enregistrée</p>
           <p className="text-xs max-w-sm mx-auto">
-            Définissez vos filières d'enseignement (ex: Génie Logiciel, Cybersécurité) pour commencer les inscriptions.
+            Définissez les filières d'enseignement de l'établissement.
           </p>
           <Button onClick={() => { setSelectedFiliere(undefined); setDialogOpen(true); }} className="mt-2">
             <Plus className="h-4 w-4 mr-1.5" /> Créer une Filière
@@ -157,7 +172,7 @@ const Filieres = () => {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="text-xs space-y-1 text-muted-foreground">
-                  <div>Diplôme préparé : <Badge variant="secondary" className="text-[10px] ml-1">{filiere.diplome || "Licence"}</Badge></div>
+                  <div>Diplôme préparé : <Badge variant="secondary" className="text-[10px] ml-1">{filiere.diplome || "Non renseigné"}</Badge></div>
                   <div>Durée du cursus : <span className="font-medium text-foreground">{filiere.duree || 3} ans</span></div>
                   <div>Unités d'Enseignement (UEs) : <span className="font-semibold text-primary">{filiere.unites_enseignement?.length || 0}</span></div>
                 </div>
@@ -173,6 +188,18 @@ const Filieres = () => {
                     <Edit className="h-3.5 w-3.5 mr-1.5" />
                     Modifier
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => {
+                      setFiliereToDelete(filiere.id);
+                      setDeleteDialogOpen(true);
+                    }}
+                    aria-label="Supprimer"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -184,8 +211,26 @@ const Filieres = () => {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         filiere={selectedFiliere}
+        departements={departements}
         onSave={handleSave}
       />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer cette filière ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Les UEs et données qui lui sont rattachées peuvent être affectés par cette suppression.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

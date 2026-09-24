@@ -7,9 +7,41 @@ Modèles Finances :
 
 from datetime import date
 from typing import List, Optional
-from sqlalchemy import String, Float, Date, ForeignKey, Text, JSON
+from sqlalchemy import String, Float, Date, ForeignKey, Text, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
+
+
+class GrilleTarifaire(Base, TimestampMixin):
+    """Grille de frais définie par filière et niveau.
+
+    Les montants sont des données de configuration métier : aucune valeur n'est
+    créée automatiquement au premier lancement. ``total_annuel`` est calculé à
+    partir des valeurs saisies par l'établissement.
+    """
+
+    __tablename__ = "grilles_tarifaires"
+    __table_args__ = (
+        UniqueConstraint("filiere", "niveau", name="uq_grilles_tarifaires_filiere_niveau"),
+    )
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    filiere_id: Mapped[Optional[str]] = mapped_column(
+        String(50), ForeignKey("filieres.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    filiere: Mapped[str] = mapped_column(String(255), nullable=False)
+    niveau: Mapped[str] = mapped_column(String(100), nullable=False)
+    droits_inscription: Mapped[float] = mapped_column(Float, nullable=False)
+    scolarite_mensuelle: Mapped[float] = mapped_column(Float, nullable=False)
+    nombre_mois: Mapped[int] = mapped_column(nullable=False)
+    actif: Mapped[bool] = mapped_column(nullable=False, default=True)
+
+    @property
+    def total_annuel(self) -> float:
+        return round(self.droits_inscription + (self.scolarite_mensuelle * self.nombre_mois), 2)
+
+    def __repr__(self) -> str:
+        return f"<GrilleTarifaire {self.filiere!r} / {self.niveau!r}>"
 
 
 class Facture(Base, TimestampMixin):

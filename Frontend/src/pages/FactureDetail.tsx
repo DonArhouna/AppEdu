@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,42 +20,49 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { financesApi, extractErrorMessage } from "@/services/apiClient";
+import { financesApi, extractErrorMessage, setupApi } from "@/services/apiClient";
+import type { Invoice, Payment } from "@/services/apiTypes";
 
 const FactureDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [facture, setFacture] = useState<any | null>(null);
-  const [paiements, setPaiements] = useState<any[]>([]);
+  const [facture, setFacture] = useState<Invoice | null>(null);
+  const [paiements, setPaiements] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState("");
 
-  const fetchFactureData = async () => {
+  const fetchFactureData = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
     try {
-      const data = await financesApi.getFactureById(id);
-      setFacture(data);
-      if (data.paiements && Array.isArray(data.paiements)) {
-        setPaiements(data.paiements);
-      } else if (data.etudiant_id) {
-        const pList = await financesApi.getPaiements({ etudiant_id: data.etudiant_id });
-        const related = (pList || []).filter((p: any) => p.facture_id === id);
-        setPaiements(related.length > 0 ? related : pList);
+      const factureResult = await financesApi.getFactureById(id);
+      if (factureResult.error || !factureResult.data) {
+        throw new Error(factureResult.error || "Facture introuvable.");
       }
-    } catch (err: any) {
+
+      const factureData = factureResult.data;
+      const statusResult = await setupApi.getStatus();
+      setCurrency(statusResult.data?.devise || "");
+      setFacture(factureData);
+      if (factureData.etudiant_id) {
+        const paiementsResult = await financesApi.getPaiements({ etudiant_id: factureData.etudiant_id });
+        if (paiementsResult.error) throw new Error(paiementsResult.error);
+        setPaiements((paiementsResult.data || []).filter((payment) => payment.facture_id === id));
+      }
+    } catch (err: unknown) {
       setError(extractErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchFactureData();
-  }, [id]);
+    void fetchFactureData();
+  }, [fetchFactureData]);
 
   const getStatutBadge = (statut: string) => {
     const s = statut?.toLowerCase();
@@ -175,7 +182,7 @@ const FactureDetail = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">
-              {montantTotal.toLocaleString("fr-FR")} FCFA
+              {montantTotal.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
             </div>
             <p className="text-xs text-muted-foreground mt-1">Échéance définie</p>
           </CardContent>
@@ -188,7 +195,7 @@ const FactureDetail = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-              {montantPaye.toLocaleString("fr-FR")} FCFA
+              {montantPaye.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {montantTotal > 0 ? Math.round((montantPaye / montantTotal) * 100) : 0}% réglé
@@ -203,7 +210,7 @@ const FactureDetail = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
-              {resteAPayer.toLocaleString("fr-FR")} FCFA
+              {resteAPayer.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
             </div>
             <p className="text-xs text-muted-foreground mt-1">Solde débiteur</p>
           </CardContent>
@@ -250,21 +257,21 @@ const FactureDetail = () => {
                 <div className="flex items-center justify-between rounded-lg border border-border p-4 bg-background">
                   <div>
                     <p className="font-semibold text-foreground">
-                      {facture.description || "Frais de scolarité universitaire"}
+                      {facture.description || "Aucune description fournie"}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Session académique : {facture.session?.nom || facture.session_id}
                     </p>
                   </div>
                   <span className="text-lg font-bold text-foreground">
-                    {montantTotal.toLocaleString("fr-FR")} FCFA
+                    {montantTotal.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between rounded-lg bg-muted/60 p-4">
                   <p className="font-bold text-foreground">Total Facturé</p>
                   <span className="text-xl font-extrabold text-foreground">
-                    {montantTotal.toLocaleString("fr-FR")} FCFA
+                    {montantTotal.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
                   </span>
                 </div>
               </div>
@@ -354,7 +361,7 @@ const FactureDetail = () => {
                         </p>
                       </div>
                       <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                        +{Number(p.montant).toLocaleString("fr-FR")} FCFA
+                        +{Number(p.montant).toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
                       </span>
                     </div>
                   ))}

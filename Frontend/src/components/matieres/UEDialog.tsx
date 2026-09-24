@@ -26,9 +26,10 @@ interface UEDialogProps {
   onOpenChange: (open: boolean) => void;
   onSave: (data: Partial<UE>) => void;
   ue: UE | null;
+  filieres: { id: string; nom: string }[];
 }
 
-export function UEDialog({ open, onOpenChange, onSave, ue }: UEDialogProps) {
+export function UEDialog({ open, onOpenChange, onSave, ue, filieres }: UEDialogProps) {
   const [formData, setFormData] = useState<Partial<UE>>({
     code: "",
     nom: "",
@@ -86,7 +87,7 @@ export function UEDialog({ open, onOpenChange, onSave, ue }: UEDialogProps) {
                   id="code"
                   value={formData.code}
                   onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                  placeholder="Ex: INF301"
+                  placeholder="Code de l'unité"
                   required
                 />
               </div>
@@ -107,7 +108,7 @@ export function UEDialog({ open, onOpenChange, onSave, ue }: UEDialogProps) {
                 id="nom"
                 value={formData.nom}
                 onChange={(e) => setFormData({ ...formData, nom: e.target.value })}
-                placeholder="Ex: Programmation Web"
+                placeholder="Intitulé de l'unité"
                 required
               />
             </div>
@@ -159,49 +160,21 @@ export function UEDialog({ open, onOpenChange, onSave, ue }: UEDialogProps) {
                     <SelectValue placeholder="Sélectionner" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Informatique">Informatique</SelectItem>
-                    <SelectItem value="Gestion">Gestion</SelectItem>
-                    <SelectItem value="Commerce">Commerce</SelectItem>
-                    <SelectItem value="Marketing">Marketing</SelectItem>
+                    {filieres.map((filiere) => (
+                      <SelectItem key={filiere.id} value={filiere.id}>
+                        {filiere.nom}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="niveau">Niveau *</Label>
-                <Select
-                  value={formData.niveau}
-                  onValueChange={(value) => setFormData({ ...formData, niveau: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="L1">L1</SelectItem>
-                    <SelectItem value="L2">L2</SelectItem>
-                    <SelectItem value="L3">L3</SelectItem>
-                    <SelectItem value="M1">M1</SelectItem>
-                    <SelectItem value="M2">M2</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Input id="niveau" value={formData.niveau || ""} onChange={(e) => setFormData({ ...formData, niveau: e.target.value })} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="semestre">Semestre *</Label>
-                <Select
-                  value={formData.semestre}
-                  onValueChange={(value) => setFormData({ ...formData, semestre: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="S1">S1</SelectItem>
-                    <SelectItem value="S2">S2</SelectItem>
-                    <SelectItem value="S3">S3</SelectItem>
-                    <SelectItem value="S4">S4</SelectItem>
-                    <SelectItem value="S5">S5</SelectItem>
-                    <SelectItem value="S6">S6</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Input id="semestre" value={formData.semestre || ""} onChange={(e) => setFormData({ ...formData, semestre: e.target.value })} required />
               </div>
             </div>
 

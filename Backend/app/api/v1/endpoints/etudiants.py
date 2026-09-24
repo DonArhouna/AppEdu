@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 
-from app.api.deps import get_db, require_secretariat, require_admin
+from app.api.deps import get_db, require_secretariat, require_admin, require_academic_staff
 from app.models.etudiant import Etudiant
 from app.models.structure import Filiere
 from app.schemas.etudiant import (
@@ -35,6 +35,7 @@ async def list_etudiants(
     statut: Optional[str] = None,
     niveau: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    _auth=Depends(require_academic_staff),
 ):
     """Recherche multi-critères et liste complète des étudiants."""
     stmt = select(Etudiant)
@@ -75,14 +76,20 @@ async def create_etudiant(
     Crée un nouvel étudiant.
     Si aucun matricule n'est fourni, il est automatiquement généré au format standard (ex: 2026-GL-0001).
     """
-    filiere_code = "GEN"
+    if not payload.filiere_id and not payload.filiere.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La filière est obligatoire pour générer un matricule.",
+        )
+    filiere_code = ""
     if payload.filiere_id:
         stmt_f = select(Filiere).where(Filiere.id == payload.filiere_id)
         res_f = await db.execute(stmt_f)
         f_obj = res_f.scalar_one_or_none()
-        if f_obj:
-            filiere_code = f_obj.code
-    elif payload.filiere:
+        if not f_obj:
+            raise HTTPException(status_code=422, detail="La filière sélectionnée n'existe pas.")
+        filiere_code = f_obj.code
+    elif payload.filiere.strip():
         filiere_code = "".join([w[0] for w in payload.filiere.split() if w]).upper()[:4]
 
     matricule = payload.matricule
@@ -120,7 +127,11 @@ async def create_etudiant(
 
 
 @router.get("/{etudiant_id}", response_model=EtudiantResponse, summary="Détail d'un étudiant")
-async def get_etudiant(etudiant_id: str, db: AsyncSession = Depends(get_db)):
+async def get_etudiant(
+    etudiant_id: str,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(require_academic_staff),
+):
     stmt = select(Etudiant).where(Etudiant.id == etudiant_id)
     res = await db.execute(stmt)
     etudiant = res.scalar_one_or_none()

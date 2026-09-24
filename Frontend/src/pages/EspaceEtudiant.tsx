@@ -1,310 +1,83 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertCircle, CalendarDays, FileText, Loader2, RefreshCw } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, FileText, Download, BookOpen, AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useAuth } from "@/contexts/AuthContext";
+import { portalsApi } from "@/services/apiClient";
+import type { Absence, AcademicSession, Course, Invoice, Matiere, Note, Student } from "@/services/apiTypes";
 
 const EspaceEtudiant = () => {
-  // Mock student data
-  const student = {
-    name: "Sophie Martin",
-    studentId: "ETU2024001",
-    promotion: "Licence 3 Informatique",
-    semester: "Semestre 6"
-  };
+  const { user } = useAuth();
+  const [student, setStudent] = useState<Student | null>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [absences, setAbsences] = useState<Absence[]>([]);
+  const [factures, setFactures] = useState<Invoice[]>([]);
+  const [cours, setCours] = useState<Course[]>([]);
+  const [matieres, setMatieres] = useState<Matiere[]>([]);
+  const [sessions, setSessions] = useState<AcademicSession[]>([]);
+  const [currency, setCurrency] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const emploiDuTemps = [
-    { day: "Lundi", time: "08:00 - 10:00", subject: "Bases de Données", room: "Salle 201", teacher: "Prof. Dubois" },
-    { day: "Lundi", time: "10:15 - 12:15", subject: "Programmation Web", room: "Lab Info 1", teacher: "Prof. Martin" },
-    { day: "Mardi", time: "08:00 - 10:00", subject: "Réseaux", room: "Salle 105", teacher: "Prof. Bernard" },
-    { day: "Mercredi", time: "14:00 - 16:00", subject: "Génie Logiciel", room: "Salle 303", teacher: "Prof. Lefebvre" },
-  ];
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const result = await portalsApi.getStudentPortal();
+    if (result.error || !result.data) {
+      setError(result.error || "Le portail étudiant est indisponible.");
+      setStudent(null);
+      setNotes([]);
+      setAbsences([]);
+      setFactures([]);
+      setCours([]);
+      setMatieres([]);
+      setSessions([]);
+      setLoading(false);
+      return;
+    }
 
-  const notes = [
-    { subject: "Bases de Données", note: 15.5, coef: 3, type: "Examen" },
-    { subject: "Programmation Web", note: 16.0, coef: 2, type: "Projet" },
-    { subject: "Réseaux", note: 14.0, coef: 2, type: "Examen" },
-    { subject: "Génie Logiciel", note: 17.0, coef: 3, type: "Projet" },
-  ];
+    const portal = result.data;
+    setStudent(portal.etudiant);
+    setNotes(portal.notes || []);
+    setAbsences(portal.absences || []);
+    setFactures(portal.factures || []);
+    setCours(portal.cours || []);
+    setMatieres(portal.matieres || []);
+    setSessions(portal.sessions || []);
+    setCurrency(portal.devise || "");
+    setLoading(false);
+  }, []);
 
-  const moyenne = notes.reduce((acc, n) => acc + (n.note * n.coef), 0) / notes.reduce((acc, n) => acc + n.coef, 0);
+  useEffect(() => { void loadData(); }, [loadData]);
 
-  const absences = [
-    { date: "2024-01-15", subject: "Bases de Données", status: "Justifiée", reason: "Certificat médical" },
-    { date: "2024-01-20", subject: "Réseaux", status: "Non justifiée", reason: "-" },
-    { date: "2024-02-05", subject: "Programmation Web", status: "Justifiée", reason: "Convocation administrative" },
-  ];
+  const matiereName = (id: string) => matieres.find((matiere) => matiere.id === id)?.nom || "Matière";
+  const sessionName = (id: string) => sessions.find((session) => session.id === id)?.nom || "Session";
+  const average = useMemo(() => {
+    const weighted = notes.reduce((sum, note) => sum + Number(note.valeur || 0) * Number(note.coefficient || 1), 0);
+    const coefficients = notes.reduce((sum, note) => sum + Number(note.coefficient || 1), 0);
+    return coefficients ? (weighted / coefficients).toFixed(2) : "—";
+  }, [notes]);
+  const currencyLabel = currency || "devise de l'établissement";
 
-  const factures = [
-    { id: "FACT-2024-001", date: "2024-01-10", montant: 850000, statut: "Payée" },
-    { id: "FACT-2024-002", date: "2024-02-10", montant: 850000, statut: "En attente" },
-    { id: "FACT-2024-003", date: "2024-03-10", montant: 850000, statut: "En attente" },
-  ];
-
-  const ressources = [
-    { title: "Cours - Modèle Relationnel", subject: "Bases de Données", type: "PDF", date: "2024-01-15" },
-    { title: "TP - Requêtes SQL Avancées", subject: "Bases de Données", type: "PDF", date: "2024-01-20" },
-    { title: "Cours - React & Redux", subject: "Programmation Web", type: "PDF", date: "2024-01-18" },
-    { title: "TD - Protocoles TCP/IP", subject: "Réseaux", type: "PDF", date: "2024-01-22" },
-  ];
+  if (loading) return <div className="flex items-center justify-center gap-2 p-16 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /> Chargement de votre espace...</div>;
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Espace Étudiant</h1>
-          <p className="text-muted-foreground mt-2">
-            Bienvenue {student.name} - {student.studentId}
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="font-medium text-foreground">{student.promotion}</p>
-          <p className="text-sm text-muted-foreground">{student.semester}</p>
-        </div>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Moyenne Générale
-            </CardTitle>
-            <FileText className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">
-              {moyenne.toFixed(2)}/20
-            </div>
-            <p className="text-xs text-success mt-1">Bon résultat</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Absences
-            </CardTitle>
-            <AlertCircle className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">
-              {absences.length}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {absences.filter(a => a.status === "Non justifiée").length} non justifiée(s)
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Paiements
-            </CardTitle>
-            <FileText className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">
-              {factures.filter(f => f.statut === "Payée").length}/{factures.length}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Factures payées</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Tabs defaultValue="emploi" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="emploi">
-            <Calendar className="h-4 w-4 mr-2" />
-            Emploi du Temps
-          </TabsTrigger>
-          <TabsTrigger value="notes">
-            <FileText className="h-4 w-4 mr-2" />
-            Notes
-          </TabsTrigger>
-          <TabsTrigger value="absences">
-            <AlertCircle className="h-4 w-4 mr-2" />
-            Absences
-          </TabsTrigger>
-          <TabsTrigger value="factures">
-            <FileText className="h-4 w-4 mr-2" />
-            Factures
-          </TabsTrigger>
-          <TabsTrigger value="ressources">
-            <BookOpen className="h-4 w-4 mr-2" />
-            Ressources
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="emploi" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Mon Emploi du Temps</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {emploiDuTemps.map((cours, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between border-b border-border pb-3 last:border-0"
-                  >
-                    <div>
-                      <p className="font-medium text-foreground">{cours.subject}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {cours.day} • {cours.time}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {cours.teacher} • {cours.room}
-                      </p>
-                    </div>
-                    <Badge variant="outline">{cours.day}</Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="notes" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Mes Notes</CardTitle>
-              <Button variant="outline" size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Télécharger Bulletin
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {notes.map((note, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between border-b border-border pb-3 last:border-0"
-                  >
-                    <div className="flex-1">
-                      <p className="font-medium text-foreground">{note.subject}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Coefficient {note.coef} • {note.type}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-foreground">{note.note}/20</p>
-                    </div>
-                  </div>
-                ))}
-                <div className="flex items-center justify-between pt-4 border-t-2 border-primary">
-                  <p className="font-bold text-foreground">Moyenne Générale</p>
-                  <p className="text-2xl font-bold text-primary">{moyenne.toFixed(2)}/20</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="absences" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Mes Absences</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {absences.map((absence, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between border-b border-border pb-3 last:border-0"
-                  >
-                    <div>
-                      <p className="font-medium text-foreground">{absence.subject}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {new Date(absence.date).toLocaleDateString("fr-FR")}
-                      </p>
-                      <p className="text-sm text-muted-foreground">{absence.reason}</p>
-                    </div>
-                    <Badge
-                      variant={absence.status === "Justifiée" ? "default" : "destructive"}
-                    >
-                      {absence.status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="factures" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Mes Factures</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {factures.map((facture) => (
-                  <div
-                    key={facture.id}
-                    className="flex items-center justify-between border-b border-border pb-3 last:border-0"
-                  >
-                    <div>
-                      <p className="font-medium text-foreground">{facture.id}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {new Date(facture.date).toLocaleDateString("fr-FR")}
-                      </p>
-                      <p className="text-sm font-medium text-foreground">
-                        {facture.montant.toLocaleString()} FCFA
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant={facture.statut === "Payée" ? "default" : "secondary"}
-                      >
-                        {facture.statut}
-                      </Badge>
-                      <Button variant="outline" size="sm">
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="ressources" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Ressources Pédagogiques</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {ressources.map((ressource, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between border-b border-border pb-3 last:border-0"
-                  >
-                    <div className="flex items-start gap-3">
-                      <BookOpen className="h-5 w-5 text-primary mt-1" />
-                      <div>
-                        <p className="font-medium text-foreground">{ressource.title}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {ressource.subject}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(ressource.date).toLocaleDateString("fr-FR")}
-                        </p>
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm">
-                      <Download className="h-4 w-4 mr-2" />
-                      {ressource.type}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="text-3xl font-bold text-foreground">Espace étudiant</h1><p className="mt-1 text-muted-foreground">{student ? `${student.prenom} ${student.nom} · ${student.matricule}` : "Aucun dossier associé"}</p></div><Button variant="outline" onClick={loadData}><RefreshCw className="mr-2 h-4 w-4" />Actualiser</Button></div>
+      {error && <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Espace indisponible</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
+      {student && <>
+        <div className="grid gap-4 md:grid-cols-3"><Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Moyenne pondérée</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{average}/20</p><p className="text-xs text-muted-foreground">{notes.length} note(s) enregistrée(s)</p></CardContent></Card><Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Absences</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{absences.length}</p><p className="text-xs text-muted-foreground">{absences.filter((item) => !item.justifiee).length} non justifiée(s)</p></CardContent></Card><Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Factures soldées</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{factures.filter((item) => item.statut === "payee").length}/{factures.length}</p><p className="text-xs text-muted-foreground">Données de facturation</p></CardContent></Card></div>
+        <Tabs defaultValue="notes" className="space-y-4"><TabsList><TabsTrigger value="emploi"><CalendarDays className="mr-2 h-4 w-4" />Emploi du temps</TabsTrigger><TabsTrigger value="notes"><FileText className="mr-2 h-4 w-4" />Notes</TabsTrigger><TabsTrigger value="absences"><AlertCircle className="mr-2 h-4 w-4" />Absences</TabsTrigger><TabsTrigger value="factures"><FileText className="mr-2 h-4 w-4" />Factures</TabsTrigger></TabsList>
+          <TabsContent value="emploi"><Card><CardHeader><CardTitle>Emploi du temps disponible</CardTitle><CardDescription>Les cours sont ceux enregistrés dans le backend.</CardDescription></CardHeader><CardContent className="space-y-3">{cours.length === 0 ? <p className="text-sm text-muted-foreground">Aucun cours enregistré.</p> : cours.map((item) => <div key={item.id} className="flex justify-between rounded-lg border p-3 text-sm"><div><p className="font-medium">{matiereName(item.matiere_id)}</p><p className="text-muted-foreground">{item.jour_semaine} · {item.heure_debut}–{item.heure_fin} · {item.salle}</p></div><Badge variant="outline">{item.type_cours}</Badge></div>)}</CardContent></Card></TabsContent>
+          <TabsContent value="notes"><Card><CardHeader><CardTitle>Mes notes</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>Matière</TableHead><TableHead>Session</TableHead><TableHead>Note</TableHead><TableHead>Coefficient</TableHead><TableHead>Statut</TableHead></TableRow></TableHeader><TableBody>{notes.length === 0 ? <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">Aucune note.</TableCell></TableRow> : notes.map((note) => <TableRow key={note.id}><TableCell>{matiereName(note.matiere_id)}</TableCell><TableCell>{sessionName(note.session_id)}</TableCell><TableCell className="font-mono font-semibold">{note.valeur}/20</TableCell><TableCell>{note.coefficient}</TableCell><TableCell><Badge variant={note.statut === "Validé" ? "default" : "destructive"}>{note.statut}</Badge></TableCell></TableRow>)}</TableBody></Table></CardContent></Card></TabsContent>
+          <TabsContent value="absences"><Card><CardHeader><CardTitle>Mes absences</CardTitle></CardHeader><CardContent className="space-y-3">{absences.length === 0 ? <p className="text-sm text-muted-foreground">Aucune absence enregistrée.</p> : absences.map((absence) => <div key={absence.id} className="flex justify-between rounded-lg border p-3 text-sm"><div><p className="font-medium">{matiereName(absence.matiere_id)}</p><p className="text-muted-foreground">{absence.date_absence} · {absence.motif || "Motif non renseigné"}</p></div><Badge variant={absence.justifiee ? "default" : "destructive"}>{absence.justifiee ? "Justifiée" : "Non justifiée"}</Badge></div>)}</CardContent></Card></TabsContent>
+          <TabsContent value="factures"><Card><CardHeader><CardTitle>Mes factures</CardTitle></CardHeader><CardContent className="space-y-3">{factures.length === 0 ? <p className="text-sm text-muted-foreground">Aucune facture.</p> : factures.map((facture) => <div key={facture.id} className="flex justify-between rounded-lg border p-3 text-sm"><div><p className="font-mono font-medium">{facture.numero_facture}</p><p className="text-muted-foreground">Échéance : {facture.date_echeance}</p></div><div className="text-right"><p className="font-semibold">{Number(facture.montant_total).toLocaleString("fr-FR")} {currencyLabel}</p><Badge variant={facture.statut === "payee" ? "default" : "secondary"}>{facture.statut}</Badge></div></div>)}</CardContent></Card></TabsContent>
+        </Tabs>
+      </>}
     </div>
   );
 };

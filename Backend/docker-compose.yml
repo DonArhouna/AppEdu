@@ -14,7 +14,7 @@ services:
       - ENVIRONMENT=development
       - DEBUG=True
       - TENANT_MODE=standalone
-      - SECRET_KEY=emp_dev_secret_key_change_in_production_very_secure_token
+      - SECRET_KEY=${EMP_SECRET_KEY:-}
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@emp_postgres:5432/edumanagepro
       - DB_HOST=emp_postgres
       - DB_PORT=5432

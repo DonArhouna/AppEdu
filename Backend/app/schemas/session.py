@@ -14,9 +14,9 @@ class PeriodePaiementBase(BaseModel):
     nom: str = Field(..., example="Tranche 1 - Octobre")
     mois: str = Field(..., example="Octobre")
     date_echeance: Optional[date] = None
-    montant_estime: Optional[float] = 0.0
+    montant_estime: Optional[float] = None
     pourcentage: Optional[float] = None
-    ordre: int = 1
+    ordre: int
 
 
 class PeriodePaiementCreate(PeriodePaiementBase):
@@ -36,12 +36,12 @@ class PeriodePaiementResponse(PeriodePaiementBase):
 # Session Académique
 # ---------------------------------------------------------------------------
 class SessionAcademiqueBase(BaseModel):
-    nom: str = Field(..., example="Année Académique 2025-2026")
-    code: str = Field(..., example="2025-2026")
-    annee_academique: str = Field(..., example="2025-2026")
+    nom: str
+    code: str
+    annee_academique: str
     date_debut: date
     date_fin: date
-    statut: str = Field("active", example="active")
+    statut: str
     description: Optional[str] = None
 
 
@@ -52,6 +52,8 @@ class SessionAcademiqueCreate(SessionAcademiqueBase):
 
 class SessionAcademiqueUpdate(BaseModel):
     nom: Optional[str] = None
+    code: Optional[str] = None
+    annee_academique: Optional[str] = None
     date_debut: Optional[date] = None
     date_fin: Optional[date] = None
     statut: Optional[str] = None
@@ -61,7 +63,7 @@ class SessionAcademiqueUpdate(BaseModel):
 
 class SessionAcademiqueResponse(SessionAcademiqueBase):
     id: str
-    periodes: List[PeriodePaiementResponse] = []
+    periodes: List[PeriodePaiementResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

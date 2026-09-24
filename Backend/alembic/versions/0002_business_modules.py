@@ -119,7 +119,14 @@ def upgrade() -> None:
     op.add_column("etudiants", sa.Column("sexe", sa.String(length=10), nullable=True, server_default="M"))
     op.add_column("etudiants", sa.Column("adresse", sa.String(length=255), nullable=True))
     op.add_column("etudiants", sa.Column("date_inscription", sa.Date(), nullable=True))
-    op.create_foreign_key("fk_etudiants_filiere_id", "etudiants", "filieres", ["filiere_id"], ["id"], ondelete="SET NULL")
+    with op.batch_alter_table("etudiants", schema=None) as batch_op:
+        batch_op.create_foreign_key(
+            "fk_etudiants_filiere_id",
+            "filieres",
+            ["filiere_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
     op.create_index(op.f("ix_etudiants_filiere_id"), "etudiants", ["filiere_id"], unique=False)
 
     # -----------------------------------------------------------------------
@@ -143,6 +150,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_cours_matiere_id"), "cours", ["matiere_id"], unique=False)
+    op.create_index(op.f("ix_cours_enseignant_id"), "cours", ["enseignant_id"], unique=False)
 
     op.create_table(
         "examens",
@@ -186,6 +194,8 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_notes_etudiant_id"), "notes", ["etudiant_id"], unique=False)
     op.create_index(op.f("ix_notes_matiere_id"), "notes", ["matiere_id"], unique=False)
+    op.create_index(op.f("ix_notes_examen_id"), "notes", ["examen_id"], unique=False)
+    op.create_index(op.f("ix_notes_session_id"), "notes", ["session_id"], unique=False)
 
     op.create_table(
         "absences",
@@ -205,6 +215,8 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_absences_etudiant_id"), "absences", ["etudiant_id"], unique=False)
+    op.create_index(op.f("ix_absences_cours_id"), "absences", ["cours_id"], unique=False)
+    op.create_index(op.f("ix_absences_matiere_id"), "absences", ["matiere_id"], unique=False)
 
     # -----------------------------------------------------------------------
     # 4. Finances (Factures, Paiements, Reçus)
@@ -254,6 +266,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_paiements_etudiant_id"), "paiements", ["etudiant_id"], unique=False)
+    op.create_index(op.f("ix_paiements_facture_id"), "paiements", ["facture_id"], unique=False)
     op.create_index(op.f("ix_paiements_session_id"), "paiements", ["session_id"], unique=False)
     op.create_index(op.f("ix_paiements_periode_id"), "paiements", ["periode_id"], unique=False)
 

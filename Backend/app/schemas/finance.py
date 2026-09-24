@@ -12,6 +12,43 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------------------------------------------------------------------
+# Grille tarifaire
+# ---------------------------------------------------------------------------
+class GrilleTarifaireBase(BaseModel):
+    filiere: str = Field(..., min_length=1, max_length=255)
+    niveau: str = Field(..., min_length=1, max_length=100)
+    droits_inscription: float = Field(..., ge=0.0)
+    scolarite_mensuelle: float = Field(..., ge=0.0)
+    nombre_mois: int = Field(..., ge=1, le=24)
+    actif: bool = True
+
+
+class GrilleTarifaireCreate(GrilleTarifaireBase):
+    id: Optional[str] = None
+    filiere_id: Optional[str] = None
+
+
+class GrilleTarifaireUpdate(BaseModel):
+    filiere: Optional[str] = Field(None, min_length=1, max_length=255)
+    filiere_id: Optional[str] = None
+    niveau: Optional[str] = Field(None, min_length=1, max_length=100)
+    droits_inscription: Optional[float] = Field(None, ge=0.0)
+    scolarite_mensuelle: Optional[float] = Field(None, ge=0.0)
+    nombre_mois: Optional[int] = Field(None, ge=1, le=24)
+    actif: Optional[bool] = None
+
+
+class GrilleTarifaireResponse(GrilleTarifaireBase):
+    id: str
+    filiere_id: Optional[str] = None
+    total_annuel: float
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
 # Facture
 # ---------------------------------------------------------------------------
 class FactureBase(BaseModel):

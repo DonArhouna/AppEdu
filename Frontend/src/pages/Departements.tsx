@@ -14,17 +14,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Building2, BookOpen, Users, Plus, Edit, Trash2, Eye, RefreshCw, AlertCircle } from "lucide-react";
-import { DepartementDialog } from "@/components/departements/DepartementDialog";
+import { DepartementDialog, type Departement } from "@/components/departements/DepartementDialog";
 import { toast } from "sonner";
 import { structureApi } from "@/services/apiClient";
 
 const Departements = () => {
-  const [departements, setDepartements] = useState<any[]>([]);
+  const [departements, setDepartements] = useState<Departement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedDepartement, setSelectedDepartement] = useState<any>();
+  const [selectedDepartement, setSelectedDepartement] = useState<Departement>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [departementToDelete, setDepartementToDelete] = useState<string | null>(null);
 
@@ -39,8 +39,8 @@ const Departements = () => {
       } else {
         setDepartements(res.data || []);
       }
-    } catch (err: any) {
-      setError(err?.message || "Erreur de connexion au serveur backend.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur de connexion au serveur backend.");
     } finally {
       setLoading(false);
     }
@@ -50,35 +50,44 @@ const Departements = () => {
     loadDepartements();
   }, []);
 
-  const handleSave = async (deptData: any) => {
+  const handleSave = async (deptData: Departement) => {
     const payload = {
       nom: deptData.nom,
-      code: deptData.code || deptData.nom.substring(0, 3).toUpperCase(),
+      code: deptData.code,
       description: deptData.description || "",
       responsable: deptData.responsable || "",
       campus_id: deptData.campus_id || undefined,
     };
 
-    const res = await structureApi.createDepartement(payload);
+    const res = selectedDepartement
+      ? await structureApi.updateDepartement(selectedDepartement.id, payload)
+      : await structureApi.createDepartement(payload);
     if (res.error) {
       toast.error(`Erreur : ${res.error}`);
       return;
     }
-    toast.success("Département enregistré avec succès.");
+    toast.success(selectedDepartement ? "Département mis à jour." : "Département enregistré.");
     setDialogOpen(false);
     setSelectedDepartement(undefined);
     await loadDepartements();
   };
 
-  const handleEdit = (dept: any) => {
+  const handleEdit = (dept: Departement) => {
     setSelectedDepartement(dept);
     setDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    toast.info("La suppression directe de département est restreinte aux administrateurs.");
+  const handleDelete = async () => {
+    if (!departementToDelete) return;
+    const result = await structureApi.deleteDepartement(departementToDelete);
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success("Département supprimé.");
     setDeleteDialogOpen(false);
     setDepartementToDelete(null);
+    await loadDepartements();
   };
 
   return (
@@ -171,6 +180,18 @@ const Departements = () => {
                     <Edit className="h-3.5 w-3.5 mr-1.5" />
                     Modifier
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => {
+                      setDepartementToDelete(departement.id);
+                      setDeleteDialogOpen(true);
+                    }}
+                    aria-label="Supprimer"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -184,6 +205,23 @@ const Departements = () => {
         departement={selectedDepartement}
         onSave={handleSave}
       />
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer ce département ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Les filières rattachées seront également supprimées si aucune donnée métier ne les protège.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

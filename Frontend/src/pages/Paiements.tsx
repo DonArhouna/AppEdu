@@ -13,9 +13,19 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { CreditCard, DollarSign, AlertCircle, Send, Zap, Plus, Building2, Printer, CalendarDays, RefreshCw } from "lucide-react";
 import { PaymentGatewayModal } from "@/components/finance/PaymentGatewayModal";
 import { PaiementPhysiqueModal } from "@/components/finance/PaiementPhysiqueModal";
-import { ReceiptModal } from "@/components/finance/ReceiptModal";
-import { financesApi, extractErrorMessage } from "@/services/apiClient";
+import { ReceiptModal, type ReceiptData } from "@/components/finance/ReceiptModal";
+import type { Invoice, Payment as PaymentApi, Student } from "@/services/apiTypes";
+import { financesApi, etudiantsApi, extractErrorMessage, setupApi } from "@/services/apiClient";
 import { toast } from "sonner";
+
+interface ReceiptPayload {
+  numero_recu?: string;
+  date_emission?: string;
+  etablissement?: { nom?: string; code?: string; devise?: string };
+  etudiant?: { matricule?: string; nom?: string; prenom?: string; filiere?: string; niveau?: string };
+  details_paiement?: { mode_paiement?: string; reference?: string; periode?: string; montant?: number; encaisse_par?: string };
+  facture?: { solde_restant?: number };
+}
 
 interface Paiement {
   id: string;
@@ -25,14 +35,24 @@ interface Paiement {
   datePaiement: string;
   modePaiement: string;
   reference: string;
-  statut: "valide" | "en_attente" | "echoue";
+  statut: string;
+}
+
+interface ImpayeRow {
+  id: string;
+  factureRef: string;
+  etudiant: string;
+  matricule: string;
+  montantDu: number;
+  dateEcheance: string;
+  joursRetard: number;
 }
 
 const Paiements = () => {
   const navigate = useNavigate();
   const [physiqueModalOpen, setPhysiqueModalOpen] = useState(false);
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
-  const [selectedReceipt, setSelectedReceipt] = useState<any>(null);
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptData | null>(null);
 
   const [selectedPayTarget, setSelectedPayTarget] = useState<{
     montant: string;
@@ -40,52 +60,65 @@ const Paiements = () => {
     etudiantNom: string;
   } | null>(null);
 
-  const [paiements, setPaiements] = useState<any[]>([]);
-  const [impayes, setImpayes] = useState<any[]>([]);
+  const [paiements, setPaiements] = useState<Paiement[]>([]);
+  const [impayes, setImpayes] = useState<ImpayeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currency, setCurrency] = useState("");
 
   const fetchData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [pList, fList] = await Promise.all([
+      const [pList, fList, studentsResult, statusResult] = await Promise.all([
         financesApi.getPaiements(),
         financesApi.getFactures(),
+        etudiantsApi.getAll(),
+        setupApi.getStatus(),
       ]);
 
-      const formattedPaiements = (pList || []).map((p: any) => ({
-        id: p.id,
-        etudiant: p.etudiant ? `${p.etudiant.prenom || ""} ${p.etudiant.nom || ""}`.trim() : (p.etudiant_id || "Étudiant"),
-        matricule: p.etudiant?.matricule || "N/A",
-        montant: Number(p.montant || 0),
-        datePaiement: p.date_paiement || new Date().toISOString(),
-        modePaiement: p.mode_paiement || "Espèces",
-        reference: p.reference || p.id,
-        statut: p.statut || "valide",
-        raw: p,
-      }));
+      if (pList.error || fList.error || studentsResult.error) {
+        throw new Error(pList.error || fList.error || studentsResult.error || "Impossible de charger les paiements.");
+      }
+      const students = studentsResult.data || [];
+      setCurrency(statusResult.data?.devise || "");
+
+      const formattedPaiements = (pList.data || []).map((p: PaymentApi) => {
+        const student = students.find((item) => item.id === p.etudiant_id);
+        return {
+          id: p.id,
+          etudiant: student ? `${student.prenom || ""} ${student.nom || ""}`.trim() : p.etudiant_id,
+          matricule: student?.matricule || "",
+          montant: Number(p.montant || 0),
+          datePaiement: p.date_paiement || "",
+          modePaiement: p.mode_paiement || "",
+          reference: p.reference || p.id,
+          statut: p.statut || "",
+          raw: p,
+        };
+      });
       setPaiements(formattedPaiements);
 
       const now = new Date();
-      const unpaidInvoices = (fList || [])
-        .filter((f: any) => f.statut !== "payee" && (f.reste_a_payer > 0 || f.montant_total > f.montant_paye))
-        .map((f: any) => {
+      const unpaidInvoices = (fList.data || [])
+        .filter((f: Invoice) => f.statut !== "payee" && (f.reste_a_payer > 0 || f.montant_total > f.montant_paye))
+        .map((f: Invoice) => {
+          const student = students.find((item) => item.id === f.etudiant_id);
           const reste = Number(f.reste_a_payer ?? (f.montant_total - f.montant_paye));
-          const ech = f.date_echeance ? new Date(f.date_echeance) : new Date();
-          const diffDays = Math.max(0, Math.floor((now.getTime() - ech.getTime()) / (1000 * 60 * 60 * 24)));
+          const ech = f.date_echeance ? new Date(f.date_echeance) : null;
+          const diffDays = ech ? Math.max(0, Math.floor((now.getTime() - ech.getTime()) / (1000 * 60 * 60 * 24))) : 0;
           return {
             id: f.id,
             factureRef: f.numero_facture || f.id,
-            etudiant: f.etudiant ? `${f.etudiant.prenom || ""} ${f.etudiant.nom || ""}`.trim() : (f.etudiant_id || "Étudiant"),
-            matricule: f.etudiant?.matricule || "N/A",
+            etudiant: student ? `${student.prenom || ""} ${student.nom || ""}`.trim() : f.etudiant_id,
+            matricule: student?.matricule || "",
             montantDu: reste,
-            dateEcheance: f.date_echeance || "-",
+            dateEcheance: f.date_echeance || "",
             joursRetard: diffDays,
           };
         });
       setImpayes(unpaidInvoices);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(extractErrorMessage(err));
     } finally {
       setLoading(false);
@@ -96,8 +129,37 @@ const Paiements = () => {
     fetchData();
   }, []);
 
-  const handlePhysiqueSuccess = (receiptRecord: any) => {
-    fetchData();
+  const openReceipt = async (paymentId: string) => {
+    const result = await financesApi.getRecuByPaiement(paymentId);
+    if (result.error || !result.data) {
+      toast.error(extractErrorMessage(result.error, "Reçu indisponible."));
+      return;
+    }
+    const data = (result.data.donnees_json || {}) as ReceiptPayload;
+    const etudiant = data.etudiant || {};
+    setSelectedReceipt({
+      numRecu: data.numero_recu || result.data.numero_recu,
+      datePaiement: data.date_emission || result.data.date_emission,
+      etudiant: {
+        matricule: etudiant.matricule || "",
+        nom: etudiant.nom || "",
+        prenom: etudiant.prenom || "",
+        filiere: etudiant.filiere || "",
+        niveau: etudiant.niveau || "",
+      },
+      etablissement: data.etablissement,
+      devise: data.etablissement?.devise,
+      modePaiement: data.details_paiement?.mode_paiement || "",
+      referencePaiement: data.details_paiement?.reference,
+      periodesPayees: data.details_paiement?.periode ? [data.details_paiement.periode] : [],
+      montantDetail: { total: data.details_paiement?.montant || 0, paye: data.details_paiement?.montant || 0, reste: data.facture?.solde_restant || 0 },
+      caissier: data.details_paiement?.encaisse_par,
+    });
+    setReceiptModalOpen(true);
+  };
+
+  const handlePhysiqueSuccess = (_receiptRecord: unknown) => {
+    void fetchData();
   };
 
   const handleOnlinePaymentSuccess = () => {
@@ -167,7 +229,7 @@ const Paiements = () => {
           </CardHeader>
           <CardContent className="pl-5">
             <div className="text-2xl font-bold text-emerald-600 font-mono">
-              {totalEncaisse.toLocaleString()} FCFA
+              {totalEncaisse.toLocaleString()} {currency || "devise de l'établissement"}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {paiements.length} règlements validés en caisse
@@ -187,7 +249,7 @@ const Paiements = () => {
           </CardHeader>
           <CardContent className="pl-5">
             <div className="text-2xl font-bold text-destructive font-mono">
-              {totalImpayes.toLocaleString()} FCFA
+              {totalImpayes.toLocaleString()} {currency || "devise de l'établissement"}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {impayes.length} dossiers d'étudiants en retard
@@ -270,7 +332,7 @@ const Paiements = () => {
                           </TableCell>
                           <TableCell className="font-semibold text-sm">{paiement.etudiant}</TableCell>
                           <TableCell className="font-mono font-bold text-emerald-600">
-                            {paiement.montant.toLocaleString()} FCFA
+                            {paiement.montant.toLocaleString()} {currency || "devise de l'établissement"}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {new Date(paiement.datePaiement).toLocaleDateString("fr-FR")}
@@ -287,28 +349,7 @@ const Paiements = () => {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => {
-                                setSelectedReceipt({
-                                  numRecu: paiement.reference,
-                                  datePaiement: paiement.datePaiement,
-                                  etudiant: {
-                                    matricule: paiement.matricule,
-                                    nom: paiement.etudiant.split(" ")[1] || "",
-                                    prenom: paiement.etudiant.split(" ")[0] || "",
-                                    filiere: "Génie Informatique",
-                                    niveau: "Licence 3",
-                                  },
-                                  modePaiement: paiement.modePaiement,
-                                  periodesPayees: ["Scolarité Régulière"],
-                                  montantDetail: {
-                                    total: paiement.montant,
-                                    paye: paiement.montant,
-                                    reste: 0,
-                                  },
-                                  caissier: "Caisse Centrale",
-                                });
-                                setReceiptModalOpen(true);
-                              }}
+                              onClick={() => void openReceipt(paiement.id)}
                               className="text-xs gap-1"
                             >
                               <Printer className="h-3.5 w-3.5" /> Reçu
@@ -366,7 +407,7 @@ const Paiements = () => {
                           <TableCell className="font-mono font-bold text-xs">{impaye.matricule}</TableCell>
                           <TableCell className="font-semibold text-sm">{impaye.etudiant}</TableCell>
                           <TableCell className="font-mono font-bold text-destructive">
-                            {impaye.montantDu.toLocaleString()} FCFA
+                            {impaye.montantDu.toLocaleString()} {currency || "devise de l'établissement"}
                           </TableCell>
                           <TableCell className="text-xs">{impaye.dateEcheance}</TableCell>
                           <TableCell>
@@ -377,8 +418,8 @@ const Paiements = () => {
                               size="sm"
                               onClick={() =>
                                 setSelectedPayTarget({
-                                  montant: `${impaye.montantDu.toLocaleString()} FCFA`,
-                                  factureRef: impaye.factureRef || `FAC-${impaye.id}`,
+                                  montant: `${impaye.montantDu.toLocaleString()} ${currency || "devise de l'établissement"}`,
+                                  factureRef: impaye.factureRef || "Non renseignée",
                                   etudiantNom: impaye.etudiant,
                                 })
                               }

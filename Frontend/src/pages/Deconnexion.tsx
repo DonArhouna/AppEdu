@@ -3,11 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { LogOut, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Deconnexion = () => {
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   useEffect(() => {
+    logout();
     toast.info("Déconnexion en cours...");
     const timer = setTimeout(() => {
       toast.success("Vous avez été déconnecté avec succès.");
@@ -15,7 +18,7 @@ const Deconnexion = () => {
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [navigate]);
+  }, [logout, navigate]);
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center p-4">

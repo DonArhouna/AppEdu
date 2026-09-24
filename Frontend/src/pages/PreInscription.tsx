@@ -1,9 +1,37 @@
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { toast } from "sonner";
+import {
+  AlertCircle,
+  Bookmark,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  FilePlus2,
+  Filter,
+  GraduationCap,
+  ListChecks,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Trash2,
+  UserRound,
+} from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -11,267 +39,663 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, FileText, Check } from "lucide-react";
-import { toast } from "sonner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { admissionsApi, extractErrorMessage, sessionsApi, structureApi } from "@/services/apiClient";
+import type {
+  AcademicSession,
+  AdmissionView,
+  AdmissionViewFilters,
+  BulkAdmissionAction,
+  Candidature,
+  CandidatureCreatePayload,
+  CandidatureStatus,
+  Filiere,
+} from "@/services/apiTypes";
+
+const STATUS_LABELS: Record<CandidatureStatus, string> = {
+  nouvelle: "Nouvelle",
+  en_verification: "En vérification",
+  complete: "Dossier complet",
+  acceptee: "Acceptée",
+  refusee: "Refusée",
+  liste_attente: "Liste d'attente",
+  converti: "Convertie",
+  annulee: "Annulée",
+};
+
+const STATUS_STYLES: Record<CandidatureStatus, string> = {
+  nouvelle: "border-blue-200 bg-blue-50 text-blue-700",
+  en_verification: "border-amber-200 bg-amber-50 text-amber-700",
+  complete: "border-cyan-200 bg-cyan-50 text-cyan-700",
+  acceptee: "border-green-200 bg-green-50 text-green-700",
+  refusee: "border-red-200 bg-red-50 text-red-700",
+  liste_attente: "border-violet-200 bg-violet-50 text-violet-700",
+  converti: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  annulee: "border-gray-200 bg-gray-50 text-gray-600",
+};
+
+const STATUS_OPTIONS: Array<CandidatureStatus | "tous"> = [
+  "tous",
+  "nouvelle",
+  "en_verification",
+  "complete",
+  "acceptee",
+  "refusee",
+  "liste_attente",
+  "converti",
+  "annulee",
+];
+
+const createEmptyForm = (sessionId = ""): CandidatureCreatePayload => ({
+  nom: "",
+  prenom: "",
+  sexe: "",
+  date_naissance: "",
+  email: "",
+  telephone: "",
+  adresse: "",
+  filiere_id: "",
+  niveau: "",
+  session_id: sessionId,
+  notes: "",
+  source: "",
+});
+
+const formatDate = (value?: string | null) => {
+  if (!value) return "—";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("fr-FR");
+};
+
+const statusLabel = (status: CandidatureStatus) => STATUS_LABELS[status] || status;
+
+const StatusBadge = ({ status }: { status: CandidatureStatus }) => (
+  <Badge variant="outline" className={STATUS_STYLES[status] || ""}>
+    {statusLabel(status)}
+  </Badge>
+);
+
+const PAGE_SIZE = 20;
 
 const PreInscription = () => {
-  const [step, setStep] = useState(1);
-  const [files, setFiles] = useState<{ [key: string]: File | null }>({
-    photo: null,
-    diplome: null,
-    cv: null,
-    lettreMotivation: null,
-  });
+  const [candidatures, setCandidatures] = useState<Candidature[]>([]);
+  const [filieres, setFilieres] = useState<Filiere[]>([]);
+  const [sessions, setSessions] = useState<AcademicSession[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<CandidatureStatus | "tous">("tous");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [statusCounts, setStatusCounts] = useState<Partial<Record<CandidatureStatus, number>>>({});
+  const [views, setViews] = useState<AdmissionView[]>([]);
+  const [activeViewId, setActiveViewId] = useState("");
+  const [viewName, setViewName] = useState("");
+  const [viewError, setViewError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkAction, setBulkAction] = useState<BulkAdmissionAction>("mettre_en_verification");
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [form, setForm] = useState<CandidatureCreatePayload>(createEmptyForm());
 
-  const handleFileChange = (key: string, file: File | null) => {
-    setFiles((prev) => ({ ...prev, [key]: file }));
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const [candidaturesResult, filieresResult, sessionsResult] = await Promise.all([
+      admissionsApi.getAll({
+        search: search.trim() || undefined,
+        statut: statusFilter === "tous" ? undefined : statusFilter,
+        page,
+        page_size: PAGE_SIZE,
+      }),
+      structureApi.getFilieres(),
+      sessionsApi.getAll(),
+    ]);
+
+    const firstError =
+      candidaturesResult.error || filieresResult.error || sessionsResult.error;
+    if (firstError) {
+      setError(extractErrorMessage(firstError, "Impossible de charger le module d'admissions."));
+    }
+
+    // Une réponse réussie reste utilisable même si une ressource de référence
+    // est temporairement indisponible; aucune donnée fictive n'est injectée.
+    const pageData = candidaturesResult.data;
+    setCandidatures(pageData?.items || []);
+    setTotal(pageData?.total || 0);
+    setTotalPages(pageData?.pages || 0);
+    setStatusCounts(pageData?.counts || {});
+    setFilieres(filieresResult.data || []);
+    setSessions(sessionsResult.data || []);
+    setLoading(false);
+  }, [page, search, statusFilter]);
+
+  const loadViews = useCallback(async () => {
+    const result = await admissionsApi.listViews();
+    if (result.error) {
+      setViewError(extractErrorMessage(result.error, "Impossible de charger les vues enregistrées."));
+      return;
+    }
+    setViewError(null);
+    setViews(result.data || []);
+  }, []);
+
+  useEffect(() => {
+    void loadViews();
+  }, [loadViews]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (form.filiere_id || filieres.length === 0) return;
+    setForm((current) => ({ ...current, filiere_id: filieres[0].id }));
+  }, [filieres, form.filiere_id]);
+
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.statut === "active") || sessions[0],
+    [sessions]
+  );
+
+  const openCreateDialog = () => {
+    setFormError(null);
+    setForm(createEmptyForm(activeSession?.id || ""));
+    setDialogOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    toast.success("Pré-inscription soumise avec succès !");
-    setStep(3);
+  const updateField = (field: keyof CandidatureCreatePayload, value: string) => {
+    setForm((current) => ({ ...current, [field]: value }));
   };
 
-  if (step === 3) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-12 pb-8">
-            <div className="mx-auto w-16 h-16 rounded-full bg-success/10 flex items-center justify-center mb-6">
-              <Check className="h-8 w-8 text-success" />
-            </div>
-            <h2 className="text-2xl font-bold text-foreground mb-2">
-              Inscription Enregistrée !
-            </h2>
-            <p className="text-muted-foreground mb-6">
-              Votre dossier de pré-inscription a été soumis avec succès. Vous recevrez
-              une confirmation par email dans les prochaines heures.
-            </p>
-            <Button onClick={() => setStep(1)} className="w-full">
-              Nouvelle Inscription
-            </Button>
+  const applyView = (viewId: string) => {
+    if (!viewId) {
+      setActiveViewId("");
+      return;
+    }
+    const view = views.find((item) => item.id === viewId);
+    if (!view) return;
+    setActiveViewId(view.id);
+    setSearch(view.filtres.search || "");
+    setStatusFilter(view.filtres.statut || "tous");
+    setPage(1);
+  };
+
+  const saveView = async () => {
+    if (!viewName.trim()) {
+      toast.error("Donnez un nom à la vue enregistrée.");
+      return;
+    }
+    const filtres: AdmissionViewFilters = {
+      search: search.trim() || undefined,
+      statut: statusFilter === "tous" ? undefined : statusFilter,
+    };
+    const result = await admissionsApi.createView({ nom: viewName.trim(), filtres });
+    if (result.error || !result.data) {
+      toast.error(extractErrorMessage(result.error, "La vue n'a pas pu être enregistrée."));
+      return;
+    }
+    setViews((current) => [...current, result.data as AdmissionView].sort((a, b) => a.nom.localeCompare(b.nom)));
+    setActiveViewId(result.data.id);
+    setViewName("");
+    toast.success("Vue d'admissions enregistrée.");
+  };
+
+  const deleteView = async (viewId: string) => {
+    const result = await admissionsApi.deleteView(viewId);
+    if (result.error) {
+      toast.error(extractErrorMessage(result.error, "La vue n'a pas pu être supprimée."));
+      return;
+    }
+    setViews((current) => current.filter((view) => view.id !== viewId));
+    if (activeViewId === viewId) setActiveViewId("");
+    toast.success("Vue supprimée.");
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  };
+
+  const togglePageSelection = () => {
+    const pageIds = candidatures.map((candidature) => candidature.id);
+    const allSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.includes(id));
+    setSelectedIds((current) => allSelected
+      ? current.filter((id) => !pageIds.includes(id))
+      : Array.from(new Set([...current, ...pageIds])));
+  };
+
+  const applyBulkAction = async () => {
+    if (selectedIds.length === 0) return;
+    setBulkLoading(true);
+    const result = await admissionsApi.bulkAction({ ids: selectedIds, action: bulkAction });
+    setBulkLoading(false);
+    if (result.error) {
+      toast.error(extractErrorMessage(result.error, "L'action groupée n'a pas pu être appliquée."));
+      return;
+    }
+    const updatedCount = result.data?.updated_ids.length || 0;
+    const errorCount = result.data?.errors.length || 0;
+    if (errorCount > 0) {
+      toast.warning(`${updatedCount} dossier(s) mis à jour, ${errorCount} en erreur.`);
+    } else {
+      toast.success(`${updatedCount} dossier(s) mis à jour.`);
+    }
+    setSelectedIds([]);
+    await loadData();
+  };
+
+  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormError(null);
+
+    if (!form.nom.trim() || !form.prenom.trim() || !form.email.trim()) {
+      setFormError("Le nom, le prénom et l'email du candidat sont obligatoires.");
+      return;
+    }
+    if (!form.filiere_id || !form.niveau.trim()) {
+      setFormError("La filière et le niveau visés sont obligatoires.");
+      return;
+    }
+
+    const payload: CandidatureCreatePayload = {
+      ...form,
+      nom: form.nom.trim(),
+      prenom: form.prenom.trim(),
+      email: form.email.trim(),
+      niveau: form.niveau.trim(),
+      filiere_id: form.filiere_id,
+      session_id: form.session_id || undefined,
+      sexe: form.sexe || undefined,
+      date_naissance: form.date_naissance || undefined,
+      telephone: form.telephone || undefined,
+      adresse: form.adresse || undefined,
+      notes: form.notes || undefined,
+      source: form.source || undefined,
+    };
+
+    setSaving(true);
+    const result = await admissionsApi.create(payload);
+    setSaving(false);
+    if (result.error || !result.data) {
+      const message = extractErrorMessage(result.error, "La candidature n'a pas pu être enregistrée.");
+      setFormError(message);
+      toast.error(message);
+      return;
+    }
+
+    toast.success(`Candidature ${result.data.reference} enregistrée.`);
+    setDialogOpen(false);
+    setForm(createEmptyForm(activeSession?.id || ""));
+    await loadData();
+  };
+
+  const counts = useMemo(
+    () => ({
+      total,
+      nouvelles: statusCounts.nouvelle || 0,
+      verification: statusCounts.en_verification || 0,
+      acceptees: statusCounts.acceptee || 0,
+    }),
+    [statusCounts, total]
+  );
+  const hasFilters = Boolean(search.trim()) || statusFilter !== "tous";
+  const allPageSelected = candidatures.length > 0 && candidatures.every((item) => selectedIds.includes(item.id));
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Pré-inscriptions</h1>
+          <p className="mt-1 text-muted-foreground">
+            Enregistrez les candidatures et suivez leur parcours d'admission.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => void loadData()} disabled={loading}>
+            <RefreshCw className={loading ? "animate-spin" : ""} />
+            Actualiser
+          </Button>
+          <Button onClick={openCreateDialog} disabled={filieres.length === 0}>
+            <Plus />
+            Nouvelle candidature
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Le module n'a pas pu être entièrement chargé</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {filieres.length === 0 && !loading && (
+        <Alert>
+          <GraduationCap />
+          <AlertTitle>Filière non configurée</AlertTitle>
+          <AlertDescription>
+            Créez d'abord une filière dans la structure académique avant d'enregistrer une candidature.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {hasFilters && (
+        <p className="text-xs text-muted-foreground">Les indicateurs ci-dessous correspondent aux résultats filtrés.</p>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-primary/10 p-2 text-primary"><UserRound /></div>
+            <div><p className="text-xs text-muted-foreground">{hasFilters ? "Total filtré" : "Total candidatures"}</p><p className="text-2xl font-semibold">{counts.total}</p></div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-blue-100 p-2 text-blue-700"><FilePlus2 /></div>
+            <div><p className="text-xs text-muted-foreground">Nouvelles</p><p className="text-2xl font-semibold">{counts.nouvelles}</p></div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-amber-100 p-2 text-amber-700"><Filter /></div>
+            <div><p className="text-xs text-muted-foreground">En vérification</p><p className="text-2xl font-semibold">{counts.verification}</p></div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-lg bg-green-100 p-2 text-green-700"><CheckCircle2 /></div>
+            <div><p className="text-xs text-muted-foreground">Acceptées</p><p className="text-2xl font-semibold">{counts.acceptees}</p></div>
           </CardContent>
         </Card>
       </div>
-    );
-  }
 
-  return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Pré-inscription en Ligne</h1>
-        <p className="text-muted-foreground mt-2">
-          Remplissez le formulaire pour soumettre votre candidature
-        </p>
-      </div>
-
-      {/* Progress Steps */}
-      <div className="flex items-center justify-between mb-8">
-        {[
-          { num: 1, label: "Informations" },
-          { num: 2, label: "Documents" },
-        ].map((s) => (
-          <div key={s.num} className="flex items-center flex-1">
-            <div
-              className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-colors ${
-                step >= s.num
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground"
-              }`}
-            >
-              {s.num}
-            </div>
-            <span
-              className={`ml-3 font-medium ${
-                step >= s.num ? "text-foreground" : "text-muted-foreground"
-              }`}
-            >
-              {s.label}
-            </span>
-            {s.num < 2 && (
-              <div
-                className={`flex-1 h-1 mx-4 rounded ${
-                  step > s.num ? "bg-primary" : "bg-muted"
-                }`}
+      <Card>
+        <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <CardTitle>Registre des candidatures</CardTitle>
+            <CardDescription>
+              Les données proviennent de l'API et sont filtrées côté serveur.
+            </CardDescription>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setActiveViewId("");
+                  setPage(1);
+                }}
+                placeholder="Nom, email ou référence"
+                className="pl-9"
+                aria-label="Rechercher une candidature"
               />
+            </div>
+            <Select value={statusFilter} onValueChange={(value) => {
+              setStatusFilter(value as CandidatureStatus | "tous");
+              setActiveViewId("");
+              setPage(1);
+            }}>
+              <SelectTrigger className="sm:w-52" aria-label="Filtrer par statut">
+                <SelectValue placeholder="Tous les statuts" />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {status === "tous" ? "Tous les statuts" : STATUS_LABELS[status]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex w-full flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center">
+            <Select value={activeViewId || "none"} onValueChange={applyView}>
+              <SelectTrigger className="sm:w-56" aria-label="Appliquer une vue enregistrée">
+                <SelectValue placeholder="Vue enregistrée" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Vue personnalisée</SelectItem>
+                {views.map((view) => <SelectItem key={view.id} value={view.id}>{view.nom}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input
+              value={viewName}
+              onChange={(event) => setViewName(event.target.value)}
+              placeholder="Nom de la vue"
+              className="sm:w-48"
+              aria-label="Nom de la vue enregistrée"
+            />
+            <Button type="button" variant="outline" size="sm" onClick={() => void saveView()}>
+              <Save /> Enregistrer la vue
+            </Button>
+            {activeViewId && (
+              <Button type="button" variant="ghost" size="sm" onClick={() => void deleteView(activeViewId)} aria-label="Supprimer la vue sélectionnée">
+                <Trash2 />
+              </Button>
             )}
           </div>
-        ))}
-      </div>
-
-      <form onSubmit={handleSubmit}>
-        {step === 1 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Informations Personnelles</CardTitle>
-              <CardDescription>
-                Veuillez renseigner vos informations personnelles
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="nom">Nom *</Label>
-                  <Input id="nom" placeholder="Votre nom" required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="prenom">Prénom *</Label>
-                  <Input id="prenom" placeholder="Votre prénom" required />
-                </div>
+          {viewError && <p className="text-xs text-destructive">{viewError}</p>}
+        </CardHeader>
+        <CardContent>
+          {selectedIds.length > 0 && (
+            <div className="mb-4 flex flex-col gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <ListChecks className="h-4 w-4 text-primary" />
+                {selectedIds.length} sélectionné(s)
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email *</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="votre.email@exemple.com"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="telephone">Téléphone *</Label>
-                  <Input
-                    id="telephone"
-                    type="tel"
-                    placeholder="+225 XX XX XX XX XX"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="dateNaissance">Date de Naissance *</Label>
-                  <Input id="dateNaissance" type="date" required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="nationalite">Nationalité *</Label>
-                  <Input id="nationalite" placeholder="Ivoirienne" required />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="adresse">Adresse Complète *</Label>
-                <Textarea
-                  id="adresse"
-                  placeholder="Votre adresse complète"
-                  required
-                  rows={3}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="filiere">Filière Souhaitée *</Label>
-                  <Select required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner une filière" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-popover">
-                      <SelectItem value="info">Informatique</SelectItem>
-                      <SelectItem value="gestion">Gestion</SelectItem>
-                      <SelectItem value="commerce">Commerce</SelectItem>
-                      <SelectItem value="droit">Droit</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="niveau">Niveau d'Études *</Label>
-                  <Select required>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner un niveau" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-popover">
-                      <SelectItem value="licence1">Licence 1</SelectItem>
-                      <SelectItem value="licence2">Licence 2</SelectItem>
-                      <SelectItem value="licence3">Licence 3</SelectItem>
-                      <SelectItem value="master1">Master 1</SelectItem>
-                      <SelectItem value="master2">Master 2</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-6">
-                <Button type="button" onClick={() => setStep(2)} size="lg">
-                  Suivant
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {step === 2 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Documents Requis</CardTitle>
-              <CardDescription>
-                Veuillez télécharger les documents nécessaires à votre inscription
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {[
-                { key: "photo", label: "Photo d'Identité", required: true },
-                { key: "diplome", label: "Copie du Diplôme", required: true },
-                { key: "cv", label: "Curriculum Vitae", required: false },
-                { key: "lettreMotivation", label: "Lettre de Motivation", required: false },
-              ].map((doc) => (
-                <div key={doc.key} className="space-y-2">
-                  <Label htmlFor={doc.key}>
-                    {doc.label} {doc.required && "*"}
-                  </Label>
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1 relative">
-                      <Input
-                        id={doc.key}
-                        type="file"
-                        className="cursor-pointer"
-                        onChange={(e) =>
-                          handleFileChange(
-                            doc.key,
-                            e.target.files ? e.target.files[0] : null
-                          )
-                        }
-                        required={doc.required}
-                      />
-                    </div>
-                    {files[doc.key] && (
-                      <div className="flex items-center gap-2 text-success text-sm">
-                        <FileText className="h-4 w-4" />
-                        <span>{files[doc.key]?.name}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              <div className="bg-accent rounded-lg p-4 mt-6">
-                <p className="text-sm text-accent-foreground">
-                  <strong>Note :</strong> Les documents doivent être au format PDF, JPG
-                  ou PNG et ne pas dépasser 5 Mo chacun.
+              <Select value={bulkAction} onValueChange={(value) => setBulkAction(value as BulkAdmissionAction)}>
+                <SelectTrigger className="sm:w-56" aria-label="Action groupée">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mettre_en_verification">Mettre en vérification</SelectItem>
+                  <SelectItem value="marquer_complete">Marquer complet</SelectItem>
+                  <SelectItem value="annuler">Annuler le dossier</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size="sm" onClick={() => void applyBulkAction()} disabled={bulkLoading}>
+                {bulkLoading ? <RefreshCw className="animate-spin" /> : <ListChecks />}
+                Appliquer
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])} disabled={bulkLoading}>
+                Annuler la sélection
+              </Button>
+            </div>
+          )}
+          {loading ? (
+            <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground">
+              <RefreshCw className="h-5 w-5 animate-spin" /> Chargement des candidatures...
+            </div>
+          ) : candidatures.length === 0 ? (
+            <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center">
+              <div className="rounded-full bg-muted p-4 text-muted-foreground"><FilePlus2 className="h-7 w-7" /></div>
+              <div>
+                <p className="font-medium">Aucune candidature pour ces critères</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Enregistrez une première candidature pour lancer le circuit d'admission.
                 </p>
               </div>
-
-              <div className="flex justify-between pt-6">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setStep(1)}
-                  size="lg"
-                >
-                  Précédent
+              <Button onClick={openCreateDialog} disabled={filieres.length === 0}>
+                <Plus /> Enregistrer une candidature
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-xl border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10">
+                      <input
+                        type="checkbox"
+                        checked={allPageSelected}
+                        onChange={togglePageSelection}
+                        disabled={loading || candidatures.length === 0}
+                        aria-label="Sélectionner toute la page"
+                      />
+                    </TableHead>
+                    <TableHead>Candidat</TableHead>
+                    <TableHead>Référence</TableHead>
+                    <TableHead>Formation visée</TableHead>
+                    <TableHead>Session</TableHead>
+                    <TableHead>Déposée le</TableHead>
+                    <TableHead>Statut</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {candidatures.map((candidature) => (
+                    <TableRow key={candidature.id}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(candidature.id)}
+                          onChange={() => toggleSelected(candidature.id)}
+                          aria-label={`Sélectionner ${candidature.prenom} ${candidature.nom}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">{candidature.prenom} {candidature.nom}</div>
+                        <div className="text-xs text-muted-foreground">{candidature.email}</div>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{candidature.reference}</TableCell>
+                      <TableCell>
+                        <div className="font-medium">{candidature.filiere?.nom || "—"}</div>
+                        <div className="text-xs text-muted-foreground">{candidature.niveau}</div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {candidature.session?.code || "—"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                        {formatDate(candidature.date_demande)}
+                      </TableCell>
+                      <TableCell><StatusBadge status={candidature.statut} /></TableCell>
+                      <TableCell className="text-right">
+                        <Button asChild variant="outline" size="sm">
+                          <Link to={`/validation?candidature=${encodeURIComponent(candidature.id)}`}>
+                            Traiter
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          {totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4">
+              <p className="text-sm text-muted-foreground">
+                Page {page} sur {totalPages} · {total} résultat(s)
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1 || loading}>
+                  <ChevronLeft /> Précédent
                 </Button>
-                <Button type="submit" size="lg">
-                  Soumettre la Candidature
+                <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page >= totalPages || loading}>
+                  Suivant <ChevronRight />
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        )}
-      </form>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Nouvelle candidature</DialogTitle>
+            <DialogDescription>
+              Les informations seront persistées dans le registre des admissions. Les pièces pourront ensuite être déposées depuis l'écran de validation.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreate} className="space-y-5">
+            {formError && (
+              <Alert variant="destructive">
+                <AlertCircle />
+                <AlertTitle>Enregistrement impossible</AlertTitle>
+                <AlertDescription>{formError}</AlertDescription>
+              </Alert>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="candidature-nom">Nom</Label>
+                <Input id="candidature-nom" value={form.nom} onChange={(event) => updateField("nom", event.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="candidature-prenom">Prénom</Label>
+                <Input id="candidature-prenom" value={form.prenom} onChange={(event) => updateField("prenom", event.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="candidature-email">Email</Label>
+                <Input id="candidature-email" type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="candidature-telephone">Téléphone</Label>
+                <Input id="candidature-telephone" value={form.telephone} onChange={(event) => updateField("telephone", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="candidature-filière">Filière</Label>
+                <Select value={form.filiere_id} onValueChange={(value) => updateField("filiere_id", value)}>
+                  <SelectTrigger id="candidature-filière"><SelectValue placeholder="Sélectionner une filière" /></SelectTrigger>
+                  <SelectContent>
+                    {filieres.map((filiere) => (
+                      <SelectItem key={filiere.id} value={filiere.id}>{filiere.nom} ({filiere.code})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="candidature-niveau">Niveau</Label>
+                <Input id="candidature-niveau" value={form.niveau} placeholder="Licence 1" onChange={(event) => updateField("niveau", event.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="candidature-session">Session cible</Label>
+                <Select value={form.session_id || "aucune"} onValueChange={(value) => updateField("session_id", value === "aucune" ? "" : value)}>
+                  <SelectTrigger id="candidature-session"><SelectValue placeholder="Sélectionner une session" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="aucune">Aucune session pour l'instant</SelectItem>
+                    {sessions.map((session) => (
+                      <SelectItem key={session.id} value={session.id}>{session.code} · {session.annee_academique}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="candidature-naissance">Date de naissance</Label>
+                <Input id="candidature-naissance" type="date" value={form.date_naissance} onChange={(event) => updateField("date_naissance", event.target.value)} />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="candidature-adresse">Adresse</Label>
+                <Input id="candidature-adresse" value={form.adresse} onChange={(event) => updateField("adresse", event.target.value)} />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="candidature-notes">Notes internes</Label>
+                <Textarea id="candidature-notes" value={form.notes} onChange={(event) => updateField("notes", event.target.value)} placeholder="Informations visibles uniquement par le personnel autorisé" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Annuler</Button>
+              <Button type="submit" disabled={saving || filieres.length === 0}>
+                {saving ? <RefreshCw className="animate-spin" /> : <FilePlus2 />}
+                Enregistrer la candidature
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

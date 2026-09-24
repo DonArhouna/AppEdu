@@ -94,7 +94,7 @@ cd Backend
 ```
 
 ### Test 2 — Parcours de Premier Lancement E2E (Sprint 3)
-Valide l'état sur base vierge, l'initialisation du Setup Wizard, le rejet de réinitialisation (409 Conflict), le login SuperAdmin, la récupération du profil `/auth/me` et les 10 tranches de session :
+Valide l'état sur base vierge, l'initialisation du Setup Wizard, le rejet de réinitialisation (409 Conflict), le login SuperAdmin, la récupération du profil `/auth/me` et les périodes de session :
 ```powershell
 cd Backend
 .\venv\Scripts\python.exe test_sprint3_e2e.py
@@ -116,17 +116,15 @@ Pour tester manuellement l'application comme un nouvel utilisateur client :
 1. Ouvrez votre navigateur sur **[http://localhost:5173](http://localhost:5173)**.
 2. Si l'application détecte un système non initialisé, elle vous redirige automatiquement vers **`/setup`**.
 3. Complétez les 4 étapes du Wizard :
-   - **Étape 1 (Infrastructure)** : Conservez la détection automatique ou renseignez vos paramètres PostgreSQL.
-   - **Étape 2 (Établissement)** : Entrez le nom de l'université/école (ex : *Institut Supérieur des Technologies & Management*), le code/sigle (*ISTM*) et la devise (*FCFA*).
-   - **Étape 3 (SuperAdmin)** : Définissez votre nom, prénom, email (*admin@edumanagepro.com*) et mot de passe (*Admin@2026!*). Observez la jauge de sécurité du mot de passe.
-   - **Étape 4 (Licence & Finalisation)** : Laissez cochée l'option *"Générer la session académique initiale 2025-2026"* puis cliquez sur **Initialiser EduManagePro**.
+   - **Étape 1 (Infrastructure)** : Vérifiez la connexion PostgreSQL configurée par `.env` ou Docker Compose.
+   - **Étape 2 (Établissement)** : Entrez le nom de l'université/école (ex : *Institut Supérieur des Technologies & Management*), le code/sigle et la devise de l'établissement.
+   - **Étape 3 (SuperAdmin)** : Définissez votre nom, prénom, adresse email et un mot de passe fort. Observez la jauge de sécurité du mot de passe.
+   - **Étape 4 (Licence & Finalisation)** : Saisissez éventuellement une clé de licence puis cliquez sur **Initialiser EduManagePro**. Les sessions et échéances seront créées ensuite depuis le module Sessions.
 4. L'écran de confirmation s'affiche avec le récapitulatif. Cliquez sur **Se Connecter au Portail**.
 
 ### Étape B — Connexion au Portail (Login)
 1. Vous arrivez sur **[http://localhost:5173/login](http://localhost:5173/login)**.
-2. Saisissez les identifiants créés lors du Setup :
-   - **Email** : `admin@edumanagepro.com`
-   - **Mot de passe** : `Admin@2026!`
+2. Saisissez les identifiants que vous avez définis lors du Setup.
 3. Cliquez sur **Se Connecter**.
 4. Le système valide le JWT Bearer et vous connecte directement au **Tableau de bord (Dashboard)** avec le rôle **ADMIN**.
 
@@ -146,12 +144,15 @@ docker compose up -d --build
 ```
 
 - Le conteneur backend applique automatiquement les migrations Alembic avant d'ouvrir le port 8000.
+- La migration `0006_remove_implicit_defaults` retire les valeurs métier injectées par la base.
+- La migration `0007_portal_identity` ajoute le lien optionnel entre un compte et son dossier étudiant, sans supprimer de données.
 - La base PostgreSQL est persistée dans le volume `emp_postgres_data`.
+- En développement, `SECRET_KEY` peut rester vide pour générer une clé éphémère ; en production, injectez une valeur aléatoire via `EMP_SECRET_KEY` ou le gestionnaire de secrets.
 - Pour arrêter les conteneurs : `docker compose down`.
 
 ---
 
-## 7. Référence des URLs et Identifiants par Défaut
+## 7. Référence des URLs et de l'accès
 
 | Composant | URL | Description |
 | :--- | :--- | :--- |
@@ -159,10 +160,20 @@ docker compose up -d --build
 | **Setup Wizard** | [http://localhost:5173/setup](http://localhost:5173/setup) | Assistant d'initialisation premier lancement |
 | **Page de Connexion** | [http://localhost:5173/login](http://localhost:5173/login) | Authentification par email / mot de passe |
 | **Backend API Root** | [http://localhost:8000](http://localhost:8000) | Accueil de l'API FastAPI |
-| **Swagger OpenAPI** | [http://localhost:8000/docs](http://localhost:8000/docs) | Documentation et tests interactifs des 36 routes |
+| **Swagger OpenAPI** | [http://localhost:8000/docs](http://localhost:8000/docs) | Documentation et tests interactifs des 62 opérations HTTP |
 | **ReDoc Documentation**| [http://localhost:8000/redoc](http://localhost:8000/redoc) | Documentation technique alternative |
 | **Healthcheck** | [http://localhost:8000/health](http://localhost:8000/health) | État de santé et statut de connexion DB |
 
-### Identifiants Administrateur Recommandés :
-- **Email** : `admin@edumanagepro.com`
-- **Mot de passe** : `Admin@2026!`
+### Identifiants administrateur
+
+Aucun mot de passe administrateur n'est prérempli. Utilisez exclusivement les identifiants créés lors du premier lancement.
+
+### Changer le mot de passe d'un administrateur existant
+
+Si l'instance a déjà été initialisée avec un ancien mot de passe, ne relancez pas le Setup Wizard. Depuis `Backend/`, utilisez l'outil interactif (le mot de passe est saisi de manière masquée) :
+
+```powershell
+.\venv\Scripts\python.exe manage_admin_password.py --email votre-email@votre-etablissement.org
+```
+
+Le compte n'est jamais réinitialisé avec une valeur codée en dur.

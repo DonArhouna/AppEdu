@@ -99,3 +99,19 @@ require_pedagogie = RoleChecker([UserRole.ADMIN, UserRole.DIRECTEUR_ETUDES])
 require_enseignant = RoleChecker([UserRole.ADMIN, UserRole.DIRECTEUR_ETUDES, UserRole.ENSEIGNANT])
 require_comptabilite = RoleChecker([UserRole.ADMIN, UserRole.COMPTABILITE])
 require_secretariat = RoleChecker([UserRole.ADMIN, UserRole.DIRECTEUR_ETUDES, UserRole.SECRETARIAT])
+require_admissions = RoleChecker([UserRole.ADMIN, UserRole.DIRECTEUR_ETUDES, UserRole.SECRETARIAT])
+require_academic_context = RoleChecker([UserRole.ADMIN, UserRole.DIRECTEUR_ETUDES])
+require_staff = RoleChecker([
+    UserRole.ADMIN,
+    UserRole.DIRECTEUR_ETUDES,
+    UserRole.SECRETARIAT,
+    UserRole.ENSEIGNANT,
+    UserRole.COMPTABILITE,
+])
+require_academic_staff = RoleChecker([
+    UserRole.ADMIN,
+    UserRole.DIRECTEUR_ETUDES,
+    UserRole.SECRETARIAT,
+    UserRole.ENSEIGNANT,
+    UserRole.COMPTABILITE,
+])

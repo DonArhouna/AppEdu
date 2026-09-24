@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { structureApi } from "@/services/apiClient";
+import type { Department, Filiere } from "@/services/apiTypes";
 
 export default function DepartementDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [dept, setDept] = useState<any>(null);
+  const [dept, setDept] = useState<Department | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,15 +24,15 @@ export default function DepartementDetail() {
         if (res.error) {
           setError(res.error);
         } else {
-          const found = (res.data || []).find((d: any) => d.id === id);
+          const found = (res.data || []).find((d) => d.id === id);
           if (found) {
             setDept(found);
           } else {
             setError("Département non trouvé dans la base de données.");
           }
         }
-      } catch (err: any) {
-        setError(err?.message || "Erreur de connexion.");
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Erreur de connexion.");
       } finally {
         setLoading(false);
       }
@@ -117,11 +118,11 @@ export default function DepartementDetail() {
             <p className="text-xs text-muted-foreground">Aucune filière n'est encore assignée à ce département.</p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
-              {dept.filieres.map((f: any) => (
+              {dept.filieres.map((f: Filiere) => (
                 <div key={f.id} className="p-3 border rounded-xl flex items-center justify-between text-xs">
                   <div>
                     <p className="font-semibold text-foreground">{f.nom}</p>
-                    <p className="text-muted-foreground">{f.diplome || "Licence"} • {f.code}</p>
+                    <p className="text-muted-foreground">{f.diplome || "Non renseigné"} • {f.code}</p>
                   </div>
                   <Link to={`/filieres`}>
                     <Button variant="ghost" size="sm" className="text-xs">
