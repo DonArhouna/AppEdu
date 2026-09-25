@@ -285,6 +285,12 @@ _GUARD_SPECS: "OrderedDict[str, tuple[str, tuple[UserRole, ...]]]" = OrderedDict
         # -- Finances --------------------------------------------------------
         ("require_finance_read", ("finance.read", (_ADMIN, _COM))),
         ("require_finance_write", ("finance.write", (_ADMIN, _COM))),
+        # -- Configuration institutionnelle ---------------------------------
+        # Identite et logo : permission **nouvelle**, donc fenetre legacy vide.
+        # Aucun role n'y accedait avant : la creer n'ouvre aucune route
+        # preexistante et ne retire rien. Elle entre automatiquement dans
+        # ``PERMISSIONS_ADMIN_SEULE``, dont la liste est derivee de cette table.
+        ("require_institution_settings", ("institution.settings", ())),
     )
 )
 
@@ -307,6 +313,15 @@ def _build_legacy_matrix() -> "dict[str, frozenset[str]]":
         for role in legacy_roles:
             matrix.setdefault(role.value, set()).add(permission_code)
     return {role: frozenset(codes) for role, codes in matrix.items()}
+
+
+#: Permissions que seul l'ADMIN legacy obtient par le raccourci de transition :
+#: ce sont les guards dont la fenetre legacy est vide, plus les trois guards
+#: d'administration declares avant la table.  Liste derivee, donc maintenue
+#: automatiquement : ajouter un guard ici n'a pas a etre reporte ailleurs.
+PERMISSIONS_ADMIN_SEULE: frozenset = frozenset(
+    {spec[0] for spec in _GUARD_SPECS.values() if not spec[1]}
+) | {"roles.manage", "users.manage", "audit.read"}
 
 
 #: Permissions Heritage des roles legacy, derivees de la table ci-dessus.

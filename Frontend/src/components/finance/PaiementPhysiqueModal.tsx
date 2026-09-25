@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowRight,
   CalendarDays,
+  Check,
   CheckCircle2,
   CreditCard,
   DollarSign,
@@ -207,15 +208,24 @@ export const PaiementPhysiqueModal = ({
     [payments]
   );
 
+  // Dependance scalaire : l'objet ``student`` change de reference a chaque
+  // rechargement du registre, ce qui relancait l'effet et provoquait une
+  // boucle de rendu (Maximum update depth exceeded).
+  const studentId = student?.id ?? null;
+
   useEffect(() => {
     setSelectedPeriods([]);
     setPayInscription(false);
-    if (!student) {
+    if (!studentId) {
       setPayments([]);
       return;
     }
+    let annule = false;
     const loadPayments = async () => {
-      const result = await financesApi.getPaiements({ etudiant_id: student.id });
+      const result = await financesApi.getPaiements({ etudiant_id: studentId });
+      // La reponse peut arriver apres la fermeture du modal : on ecrit
+      // seulement si le composant est toujours monte sur le meme etudiant.
+      if (annule) return;
       if (result.error) {
         toast.error(extractErrorMessage(result.error, "Historique de paiement indisponible."));
         return;
@@ -223,7 +233,10 @@ export const PaiementPhysiqueModal = ({
       setPayments(result.data || []);
     };
     void loadPayments();
-  }, [student]);
+    return () => {
+      annule = true;
+    };
+  }, [studentId]);
 
   const getPeriodCost = (period: PeriodRecord) => {
     if (period.montant_estime && period.montant_estime > 0) return period.montant_estime;
@@ -526,6 +539,8 @@ export const PaiementPhysiqueModal = ({
                         <button
                           type="button"
                           key={period.id}
+                          role="checkbox"
+                          aria-checked={checked}
                           disabled={paid || cost <= 0}
                           onClick={() => togglePeriod(period)}
                           className={`rounded-xl border p-3 text-left text-xs transition-colors ${paid || cost <= 0 ? "cursor-not-allowed bg-muted/50 opacity-60" : checked ? "border-primary bg-primary/5" : "hover:bg-accent/40"}`}
@@ -535,7 +550,25 @@ export const PaiementPhysiqueModal = ({
                               <p className="font-semibold">{period.nom}</p>
                               <p className="text-muted-foreground">{period.mois} {period.date_echeance ? `· ${period.date_echeance}` : ""}</p>
                             </div>
-                            {paid ? <Badge variant="outline">Réglée</Badge> : paidAmount > 0 ? <Badge variant="outline">Partiellement réglée</Badge> : <Checkbox checked={checked} className="pointer-events-none" />}
+                            {paid ? (
+                              <Badge variant="outline">Réglée</Badge>
+                            ) : paidAmount > 0 ? (
+                              <Badge variant="outline">Partiellement réglée</Badge>
+                            ) : (
+                              // Indicateur visuel : un Checkbox ici rendait un
+                              // <button> dans le <button> de la tuile, ce qui est
+                              // du HTML invalide.
+                              <span
+                                aria-hidden="true"
+                                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
+                                  checked
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-input"
+                                }`}
+                              >
+                                {checked && <Check className="h-3 w-3" />}
+                              </span>
+                            )}
                           </div>
                           <p className="mt-2 text-right font-mono font-semibold">{cost.toLocaleString("fr-FR")} {currencyLabel}</p>
                         </button>

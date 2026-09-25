@@ -11,7 +11,12 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.api.deps import get_current_active_user, get_db, legacy_permissions_for
+from app.api.deps import (
+    PERMISSIONS_ADMIN_SEULE,
+    get_current_active_user,
+    get_db,
+    legacy_permissions_for,
+)
 from app.core.config import settings
 from app.core.security import verify_password, create_access_token, get_password_hash
 from app.models.utilisateur import Utilisateur, UserRole
@@ -98,10 +103,15 @@ async def get_current_user_profile(
     profile.permissions = list(authorization.permission_codes)
     # Fenêtre legacy issue de la même table de guards que les endpoints : le
     # client ne peut donc ni inventer ni manquer un droit.
+    if current_user.role == UserRole.ADMIN.value:
+        # Raccourci de transition : l'ADMIN herite des permissions sans
+        # fenetre legacy declaree, afin que l'interface reste coherente avec
+        # ce que les guards autorisent reellement pour ce compte.
+        heritee = set(PERMISSIONS_ADMIN_SEULE)
+    else:
+        heritee = set(legacy_permissions_for(current_user.role))
     profile.permissions_effectives = sorted(
-        set(authorization.permission_codes)
-        | set(legacy_permissions_for(current_user.role))
-        | ({"dashboard.read"} if current_user.role == UserRole.ADMIN.value else set())
+        set(authorization.permission_codes) | heritee
     )
     profile.authz_version = authorization.authz_version
     return profile

@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     ADMISSIONS_STORAGE_DIR: str = "storage/admissions"
     ADMISSIONS_MAX_UPLOAD_BYTES: int = 10 * 1024 * 1024
 
+    # Documents officiels generes (PDF). Les octets restent hors PostgreSQL,
+    # qui ne conserve que le chemin relatif et l'empreinte SHA-256.
+    DOCUMENTS_STORAGE_DIR: str = "storage/documents"
+
+    # Branding institutionnel (logo). Les octets restent hors PostgreSQL, qui
+    # ne conserve que le chemin relatif dans ``etablissements.logo_url``.
+    BRANDING_STORAGE_DIR: str = "storage/etablissement"
+
     # CORS
     BACKEND_CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:5173",

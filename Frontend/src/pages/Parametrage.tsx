@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, CalendarDays, Loader2, RefreshCw, Save, Settings } from "lucide-react";
+import { AlertCircle, CalendarDays, Loader2, RefreshCw, Save } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -14,7 +13,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { academicContextApi, extractErrorMessage, sessionsApi, setupApi } from "@/services/apiClient";
+import InstitutionConfigCard from "@/components/institution/InstitutionConfigCard";
+import { useRBAC } from "@/contexts/RBACContext";
+import {
+  academicContextApi,
+  extractErrorMessage,
+  PERMISSION_INSTITUTION_SETTINGS,
+  sessionsApi,
+  setupApi,
+} from "@/services/apiClient";
 import type { AcademicContext } from "@/services/apiTypes";
 import { toast } from "sonner";
 
@@ -28,14 +35,12 @@ interface SessionRow {
   statut: string;
 }
 
-interface Institution {
-  nom: string;
-  code: string;
-  devise: string;
-}
-
 const Parametrage = () => {
-  const [institution, setInstitution] = useState<Institution>({ nom: "", code: "", devise: "" });
+  // La lecture de l'identite est ouverte a tout le personnel ; seule son
+  // modification exige la permission dediee. C'est le meme partage que cote
+  // API : `academic.read` pour lire, `institution.settings` pour ecrire.
+  const { hasPermission } = useRBAC();
+  const canEditInstitution = hasPermission(PERMISSION_INSTITUTION_SETTINGS);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [academicContext, setAcademicContext] = useState<AcademicContext | null>(null);
   const [contextSessionId, setContextSessionId] = useState("");
@@ -54,11 +59,6 @@ const Parametrage = () => {
     if (statusResult.error || sessionsResult.error) {
       setError(extractErrorMessage(statusResult.error || sessionsResult.error));
     } else {
-      setInstitution({
-        nom: statusResult.data?.etablissement_nom || "",
-        code: statusResult.data?.etablissement_code || "",
-        devise: statusResult.data?.devise || "",
-      });
       setSessions((sessionsResult.data || []) as SessionRow[]);
     }
     if (contextResult.data) {
@@ -115,17 +115,10 @@ const Parametrage = () => {
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Settings className="h-4 w-4" /> Établissement</CardTitle>
-          <CardDescription>Ces informations sont définies pendant le Setup et affichées en lecture seule ici.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
-          <div className="space-y-2"><Label>Nom</Label><Input value={institution.nom} readOnly /></div>
-          <div className="space-y-2"><Label>Code</Label><Input value={institution.code} readOnly /></div>
-          <div className="space-y-2"><Label>Devise</Label><Input value={institution.devise} readOnly /></div>
-        </CardContent>
-      </Card>
+      <InstitutionConfigCard
+        canEdit={canEditInstitution}
+        onSaved={() => void loadData()}
+      />
 
       <Card>
         <CardHeader>

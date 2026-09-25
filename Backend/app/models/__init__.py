@@ -20,6 +20,13 @@ from app.models.rbac import Permission, Role, RolePermission, UserRoleAssignment
 # Import massif d'etudiants : reference ``etudiants`` et ``utilisateurs``
 # par cle etrangere, donc importe apres les deux.
 from app.models.etudiant_import import EtudiantImportBatch, EtudiantImportRow
+# Documents officiels : reference ``etudiants``, ``sessions_academiques``
+# et ``utilisateurs`` par cle etrangere, donc importe apres les trois.
+from app.models.document_officiel import DocumentOfficiel
+# Journal des versions de la configuration institutionnelle : reference
+# ``etablissements`` et ``utilisateurs`` par cle etrangere, donc importe apres
+# les deux.
+from app.models.configuration import ConfigurationVersion
 
 __all__ = [
     "Base",
@@ -59,4 +66,6 @@ __all__ = [
     "UserRoleAssignment",
     "EtudiantImportBatch",
     "EtudiantImportRow",
+    "DocumentOfficiel",
+    "ConfigurationVersion",
 ]

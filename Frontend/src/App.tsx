@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageLoader } from "@/components/ui/page-loader";
 
@@ -12,6 +13,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const PreInscription = lazy(() => import("./pages/PreInscription"));
 const Etudiants = lazy(() => import("./pages/Etudiants"));
 const EtudiantImport = lazy(() => import("./pages/EtudiantImport"));
+const Documents = lazy(() => import("./pages/Documents"));
 const StudentDetail = lazy(() => import("./pages/StudentDetail"));
 const Validation = lazy(() => import("./pages/Validation"));
 const Promotions = lazy(() => import("./pages/Promotions"));
@@ -63,6 +65,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { RBACProvider, type UserRole } from "@/contexts/RBACContext";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { PERMISSION_INSTITUTION_SETTINGS } from "@/services/apiClient";
 
 const queryClient = new QueryClient();
 
@@ -92,6 +95,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <ErrorBoundary>
         <Suspense fallback={<PageLoader />}>
           <Routes>
             {/* Standalone Authentication & Public Verification Routes */}
@@ -127,6 +131,14 @@ const App = () => (
                          </ProtectedRoute>
                        }
                      />
+                    <Route
+                       path="/documents"
+                       element={
+                         <ProtectedRoute requiredPermission="documents.issue">
+                           <Documents />
+                         </ProtectedRoute>
+                       }
+                    />
                     <Route
                        path="/etudiants/import"
                        element={
@@ -297,7 +309,7 @@ const App = () => (
                     <Route
                       path="/parametrage"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN"]}>
+                        <ProtectedRoute requiredPermission={PERMISSION_INSTITUTION_SETTINGS}>
                           <Parametrage />
                         </ProtectedRoute>
                       }
@@ -317,6 +329,7 @@ const App = () => (
             />
           </Routes>
         </Suspense>
+        </ErrorBoundary>
       </BrowserRouter>
         </RBACProvider>
       </AuthProvider>

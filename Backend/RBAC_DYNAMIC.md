@@ -17,7 +17,7 @@ rôle legacy `utilisateurs.role`.
 
 | Fichier | Rôle |
 |---|---|
-| `app/core/permissions.py` | Source de vérité unique du catalogue (14 permissions) et des 6 rôles système. Aucune dépendance ORM/DB, importable par Alembic. |
+| `app/core/permissions.py` | Source de vérité unique du catalogue (14 permissions d'origine) et des 6 rôles système. Deux permissions complémentaires sont ajoutées par les migrations 0015 et 0016 : voir § 1.1. Aucune dépendance ORM/DB, importable par Alembic. |
 | `app/models/rbac.py` | `Permission`, `Role`, `RolePermission`, `UserRoleAssignment` (+ `Base`, `TimestampMixin`). |
 | `app/schemas/rbac.py` | Schémas Pydantic V2 (CRUD, affectations, permissions effectives, contrat étendu de `/auth/me`). |
 | `app/services/rbac_service.py` | Résolution d'autorité transaction-safe : `effective_permissions`, `list_effective_role_codes`, `list_effective_permission_codes`, `resolve_authz_version`, `role_permission_codes`. |
@@ -129,10 +129,36 @@ modèles ORM et la migration.
 | Type | Nombre | Détail |
 |---|---|---|
 | Permissions techniques | **14** | `dashboard.read`, `students.read`, `students.write`, `admissions.read`, `admissions.write`, `academic.read`, `academic.write`, `pedagogy.read`, `pedagogy.write`, `finance.read`, `finance.write`, `users.manage`, `roles.manage`, `audit.read` — toutes `systeme = true`, `actif = true` |
+| Permissions ajoutées après | **2** | `documents.issue` (migration 0015), `institution.settings` (migration 0016) — voir § 1.1. `systeme = true`, `actif = true`, aucun grant |
 | Rôles système | **6** | `ROLE_ADMIN`, `ROLE_DIRECTEUR_ETUDES`, `ROLE_SECRETARIAT`, `ROLE_COMPTABILITE`, `ROLE_ENSEIGNANT`, `ROLE_ETUDIANT` — tous `systeme = true`, `actif = true`, `ordre` 10/20/30/40/50/60 |
 | Grants rôle→permission | **0** | aucun |
 | Affectations utilisateur→rôle | **0** | aucune |
 | Comptes utilisateurs | **0** | aucun (`SELECT COUNT(*) FROM utilisateurs` = 0 après migration) |
+
+### 1.1. Permissions ajoutees apres la bascule
+
+La migration `0013_rbac_dynamic` livre 14 permissions. Deux sont venues
+s'aplater ensuite, chacune avec sa migration, **sans toucher aux 14 autres**
+ni a la fenetre d'aucun role existant.
+
+| Permission | Migration | Guard | Fenetre legacy | Justification |
+|---|---|---|---|---|
+| `documents.issue` | `0015_documents_officiels` | `require_documents_issue` | SECRETARIAT | Deleguer l'emission d'un certificat au secretariat sans ouvrir l'ecriture sur les dossiers etudiants. `students.write` ne convient pas : il ouvrirait aussi la suppression. |
+| `institution.settings` | `0016_configuration_institutionnelle` | `require_institution_settings` | — (ADMIN) | Faire preparer le branding (logo, coordonnees) par une direction sans lui accorder `users.manage` ni `roles.manage`. Fenetre vide : personne n'y accedait avant, donc la creer n'ouvre aucune route preexistante. |
+
+Deux proprietes meritent d'etre soulignees :
+
+- `documents.issue` **ne retire rien** a `students.write` : une ecriture de
+  dossier et une emission de certificat sont deux actes distincts, delegables
+  a deux personnes differentes.
+- `institution.settings` entre automatiquement dans
+  `PERMISSIONS_ADMIN_SEULE`, dont la liste est **derivee** de `_GUARD_SPECS` :
+  ajouter un guard n'a pas a etre reporte ailleurs.
+
+La lecture de la configuration institutionnelle, elle, reutilise le guard
+`require_academic_read` existant plutot qu'un checker neuf. Un checker cree
+avec une fenetre legacy vide aurait refuse aux roles historiques qui ont
+acces partout ailleurs — une regression silencieuse.
 
 ### Ce qu'elle ne fait pas
 
@@ -274,6 +300,8 @@ Il n'existe donc qu'une seule matrice, côté serveur.
 | `require_users_manage` | `users.manage` | — (ADMIN) | `POST/PUT/DELETE /users/` |
 | `require_audit_read` | `audit.read` | — (ADMIN) | `GET /audit/events` |
 | `require_rbac_admin` | `roles.manage` | — (ADMIN) | `/rbac/**` (18 opérations) |
+| `require_documents_issue` | `documents.issue` | ADMIN, DIRC, SECR | `/documents` émission unitaire, aperçu, lot, duplicata (4) |
+| `require_institution_settings` | `institution.settings` | — (ADMIN) | `/institution` écriture identité + logo (PUT config, POST/DELETE logo) |
 
 #### Pourquoi plusieurs guards partagent une permission
 
@@ -577,6 +605,8 @@ n'est touchée, aucun reset** :
 1. cycle `upgrade → downgrade → upgrade` de 0013 ;
 2. refus de downgrade dès qu'un rôle hors catalogue existe ;
 3. seed exact : 14 permissions, 6 rôles système, **0** grant, **0** compte ;
+   le catalogue total est de 16 permissions après 0015 et 0016, ce que
+   `test_rbac_e2e.py` vérifie explicitement ;
 4. `/auth/me` : 13 champs legacy intacts + 3 champs dynamiques ;
 5. catalogue : liste, filtres, détail, création, doublon `409`, code invalide
    `422`, protection système `409` ;

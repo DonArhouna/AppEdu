@@ -117,3 +117,14 @@ __all__ = [
     "RoleCreate", "RolePermissionAdd", "RolePermissionsSet", "RoleResponse", "RoleUpdate",
     "RoleUsersAssign", "RoleUsersResponse", "UserRoleAssignmentResponse",
 ]
+
+# Documents officiels
+from app.schemas.document_officiel import (  # noqa: E402,F401
+    DocumentOfficielListe,
+    DocumentOfficielOut,
+    DuplicataRequest,
+    EmissionDocumentRequest,
+    LotDocumentRequest,
+    LotDocumentResponse,
+    TypeDocumentOut,
+)

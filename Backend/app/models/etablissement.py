@@ -25,6 +25,11 @@ class Etablissement(Base, TimestampMixin):
     pays: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     devise: Mapped[str] = mapped_column(String(10), nullable=False)
     
+    # Branding : logo de l'etablissement utilise sur les documents officiels.
+    # Chemin relatif dans ``storage/etablissement`` ; les octets restent hors
+    # PostgreSQL, comme les autres pieces.
+    logo_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     # Licence & Activation
     licence_cle: Mapped[Optional[str]] = mapped_column("license_key", String(255), nullable=True)
     licence_statut: Mapped[str] = mapped_column(String(50), nullable=False)

@@ -460,7 +460,7 @@ async def create_paiement(
         "facture": {
             "id": facture.id if facture else None,
             "numero_facture": facture.numero_facture if facture else None,
-            "solde_restant": facture.reste_a_payer if facture else 0.0,
+            "solde_restant": facture.reste_a_payer() if facture else 0.0,
         } if facture else None,
     }
 
@@ -528,7 +528,7 @@ async def get_balance_agee(db: AsyncSession = Depends(get_db), _auth=Depends(req
     total_creances = 0.0
 
     for f in factures:
-        reste = f.reste_a_payer
+        reste = f.reste_a_payer()
         if reste <= 0:
             continue
         total_creances += reste

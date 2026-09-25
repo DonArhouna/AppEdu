@@ -69,8 +69,13 @@ EXPECTED_PERMISSION_CODES = {
     "admissions.write",
     "audit.read",
     "dashboard.read",
+    "documents.issue",
     "finance.read",
     "finance.write",
+    # Configuration institutionnelle (identite, logo) : permission dediee,
+    # sans heritage, pour deleguer le branding sans ouvrir la gestion des
+    # comptes.
+    "institution.settings",
     "pedagogy.read",
     "pedagogy.write",
     "roles.manage",
@@ -197,7 +202,35 @@ def _expect_downgrade_refused() -> None:
         else:
             raise AssertionError(
                 "La downgrade 0013 a detruit un role hors catalogue."
+                "La downgrade 0013 a detruit un role hors catalogue."
             )
+
+        # Sur SQLite le DDL n'est pas transactionnel : les migrations
+        # superieures a 0013 ont deja ete retirees avant d'atteindre le refus.
+        # On restaure le schema, puis on verifie que la restauration est
+        # complete. Sur PostgreSQL, l'echec aurait annule l'ensemble.
+        command.upgrade(_config(), "head")
+        with engine.begin() as connection:
+            colonnes = {
+                row[1]
+                for row in connection.execute(
+                    sa.text("PRAGMA table_info(etablissements)")
+                )
+            }
+            assert "logo_url" in colonnes, colonnes
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    sa.text("SELECT name FROM sqlite_master WHERE type='table'")
+                )
+            }
+            for attendue in (
+                "documents_officiels",
+                "etudiants_import_batches",
+                "etudiants_import_rows",
+                "rbac_roles",
+            ):
+                assert attendue in tables, (attendue, sorted(tables))
         with engine.begin() as connection:
             connection.execute(
                 sa.text("DELETE FROM rbac_roles WHERE code = 'ROLE_TEMPORAIRE'")
@@ -232,10 +265,15 @@ async def _run() -> None:
         # 1. Seed exact de la migration
         # -------------------------------------------------------------------
         seed = _seed_counts()
-        assert seed["permissions"] == 14, seed
-        assert seed["system_permissions"] == 14, seed
-        assert seed["roles"] == 6, seed
-        assert seed["system_roles"] == 6, seed
+        # La migration 0013 pose 14 permissions ; la 0015 en ajoute une
+        # (``documents.issue``). Le test verifie l'ensemble exact plutot
+        # qu'un nombre fige, pour rester valide a chaque evolution du
+        # catalogue.
+        attendu = len(EXPECTED_PERMISSION_CODES)
+        assert seed["permissions"] == attendu, (seed, sorted(EXPECTED_PERMISSION_CODES))
+        assert seed["system_permissions"] == attendu, seed
+        assert seed["roles"] == len(EXPECTED_SYSTEM_ROLE_CODES), seed
+        assert seed["system_roles"] == len(EXPECTED_SYSTEM_ROLE_CODES), seed
         # Aucune permission accordee, aucun compte cree, aucune affectation.
         assert seed["grants"] == 0, seed
         assert seed["assignments"] == 0, seed
@@ -940,8 +978,10 @@ async def _run() -> None:
         # -------------------------------------------------------------------
         final_seed = _seed_counts()
         assert final_seed["users"] == 3, final_seed
-        assert final_seed["system_roles"] == 6, final_seed
-        assert final_seed["system_permissions"] == 14, final_seed
+        assert final_seed["system_roles"] == len(EXPECTED_SYSTEM_ROLE_CODES), final_seed
+        assert (
+            final_seed["system_permissions"] == len(EXPECTED_PERMISSION_CODES)
+        ), final_seed
         # Un role systeme actif, non affecte, ne peut pas etre supprime.
         assert (
             await client.delete("/api/v1/rbac/roles/ROLE_ADMIN", headers=admin_headers)
@@ -1102,11 +1142,20 @@ async def _run() -> None:
             set(aide_me.json()["permissions_effectives"])
         )
         assert "students.read" in aide_me.json()["permissions_effectives"]
-        # 20.d L'ADMIN legacy conserve la totalite des droits metier.
+        # 20.d L'ADMIN legacy herite des permissions protegees par un guard
+        #       sans fenetre legacy (roles.manage, users.manage, audit.read),
+        #       liste derivee de la table de guards.
         admin_profile = await client.get("/api/v1/auth/me", headers=admin_headers)
         assert admin_profile.json()["permissions"] == []
-        assert "dashboard.read" in admin_profile.json()["permissions_effectives"]
-        assert "roles.manage" not in admin_profile.json()["permissions_effectives"]
+        effectifs_admin = admin_profile.json()["permissions_effectives"]
+        for permission in ("roles.manage", "users.manage", "audit.read"):
+            assert permission in effectifs_admin, (permission, effectifs_admin)
+        # En revanche ``dashboard.read`` ne protege aucun endpoint (le tableau
+        # de bord est un agregat cote client) : il n'est donc pas implique et
+        # doit etre accorde explicitement par un role si l'interface l'exige.
+        assert "dashboard.read" not in effectifs_admin, effectifs_admin
+        # Une permission metier reste absente tant qu'aucun role ne l'accorde.
+        assert "students.write" not in effectifs_admin, effectifs_admin
         print("  [OK] permissions_effectives : le backend expose le droit exerçable.")
 
     print("E2E RBAC dynamique : OK")

@@ -45,11 +45,18 @@ import type {
   Note,
   Payment,
   Receipt,
+  DocumentOfficiel,
   ImportAnalyse,
   ImportBatch,
+  LotDocuments,
+  TypeDocument,
   ImportModele,
   ImportMode,
   ImportValidation,
+  ConfigurationVersion,
+  InstitutionConfig,
+  InstitutionConfigModifiee,
+  InstitutionConfigPayload,
   RbacPermission,
   RbacRole,
   RbacUserAccess,
@@ -255,6 +262,67 @@ export const setupApi = {
       body: JSON.stringify(payload),
     }),
 };
+
+// ---------------------------------------------------------------------------
+// 1 bis. Configuration institutionnelle (identité, logo, historique)
+// ---------------------------------------------------------------------------
+
+/**
+ * Permission exigee pour modifier la configuration institutionnelle.
+ *
+ * Elle vit dans la couche API, avec les autres noms de permissions : l'ecran
+ * n'a pas a la redeclarer, et un ecran qui l'invente divergerait de ce que
+ * le backend reellement autorise.
+ */
+export const PERMISSION_INSTITUTION_SETTINGS = "institution.settings";
+
+export const institutionApi = {
+  /** Configuration en vigueur, avec son numéro de version. */
+  getConfig: () => request<InstitutionConfig>("/institution/configuration"),
+
+  /**
+   * Enregistre l'identite. Une reponse dont `modifications` est vide signifie
+   * qu'aucun champ n'a reellement change : aucune version n'a ete creee, et
+   * ce n'est pas une erreur.
+   */
+  updateConfig: (payload: InstitutionConfigPayload) =>
+    request<InstitutionConfigModifiee>("/institution/configuration", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * Televerse le logo. Le format est verifie par le serveur **sur les
+   * octets** : un fichier qui n'est pas une image est refuse, quel que soit
+   * son nom. La validation cote navigateur ne dispense pas de cette verite.
+   */
+  uploadLogo: (fichier: File) => {
+    const donnees = new FormData();
+    donnees.append("fichier", fichier);
+    return request<InstitutionConfigModifiee>("/institution/logo", {
+      method: "POST",
+      body: donnees,
+    });
+  },
+
+  removeLogo: () =>
+    request<InstitutionConfigModifiee>("/institution/logo", { method: "DELETE" }),
+
+  /** Historique des versions, de la plus recente a la plus ancienne. */
+  getVersions: () => request<ConfigurationVersion[]>("/institution/versions"),
+
+  /**
+   * Octets du logo, pour l'apercu. Un 404 signifie « pas de logo » : c'est
+   * un etat normal, pas une erreur, d'ou le retour du statut a l'appelant.
+   */
+  getLogo: () => requestBlob("/institution/logo"),
+};
+
+/*
+ * Le logo ne se charge pas par une `<img src>` : cet endpoint est protege par
+ * `academic.read` et une balise `<img>` ne peut pas envoyer le jeton Bearer.
+ * L'ecran recupere les octets par `getLogo()` et attache une URL d'objet.
+ */
 
 // ---------------------------------------------------------------------------
 // 2. Contexte global & sessions académiques
@@ -763,6 +831,61 @@ export const etudiantImportApi = {
   urlModeleCsv: () => `${API_BASE_URL}/etudiants/import/modele.csv`,
 };
 
+export const documentsApi = {
+  /** Catalogue des types emissibles et conditions a satisfaire. */
+  getTypes: () => request<TypeDocument[]>("/documents/types"),
+  /**
+   * Emet un document pour un etudiant.
+   * `apercu: true` reserve un numero sans produire de PDF.
+   */
+  emettre: (
+    etudiantId: string,
+    data: { type_document: string; session_id?: string | null; apercu?: boolean }
+  ) =>
+    request<DocumentOfficiel>(
+      `/documents/etudiants/${encodeURIComponent(etudiantId)}`,
+      { method: "POST", body: JSON.stringify(data) }
+    ),
+  /** Verifie l'eligibilite et affiche la future reference, sans ecrire. */
+  apercu: (etudiantId: string, data: { type_document: string; session_id?: string | null }) =>
+    request<DocumentOfficiel>(
+      `/documents/etudiants/${encodeURIComponent(etudiantId)}/apercu`,
+      { method: "POST", body: JSON.stringify(data) }
+    ),
+  /** Emission en serie pour une classe ou une session. */
+  emettreLot: (data: {
+    type_document: string;
+    classe_id?: string | null;
+    session_id?: string | null;
+    ignorer_les_non_eligibles?: boolean;
+  }) =>
+    request<LotDocuments>("/documents/lot", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  lister: (params: { etudiant_id?: string; type_document?: string; limite?: number } = {}) => {
+    const query = new URLSearchParams();
+    if (params.etudiant_id) query.set("etudiant_id", params.etudiant_id);
+    if (params.type_document) query.set("type_document", params.type_document);
+    if (params.limite) query.set("limite", String(params.limite));
+    const suffix = query.toString();
+    return request<DocumentOfficiel[]>(`/documents/${suffix ? `?${suffix}` : ""}`);
+  },
+  duplicata: (documentId: string, motif: string) =>
+    request<DocumentOfficiel>(
+      `/documents/${encodeURIComponent(documentId)}/duplicata`,
+      { method: "POST", body: JSON.stringify({ motif }) }
+    ),
+  marquerDelivrance: (documentId: string) =>
+    request<DocumentOfficiel>(
+      `/documents/${encodeURIComponent(documentId)}/delivrance`,
+      { method: "POST" }
+    ),
+  /** URL de telechargement : le navigateur recupere le PDF directement. */
+  urlTelecharger: (documentId: string) =>
+    `${API_BASE_URL}/documents/${encodeURIComponent(documentId)}/telecharger`,
+};
+
 export const rbacApi = {
   getPermissions: (filters?: { domaine?: string; actif?: boolean; systeme?: boolean }) => {
     const params = new URLSearchParams();
@@ -922,6 +1045,7 @@ export default {
   finances: financesApi,
   users: usersApi,
   etudiantImport: etudiantImportApi,
+  documents: documentsApi,
   rbac: rbacApi,
   portals: portalsApi,
   admissions: admissionsApi,

@@ -8,6 +8,7 @@ import {
   DollarSign, CreditCard, TrendingUp, BarChart3, School,
   Briefcase, Wallet, UserCircle, Settings, Search, X, Sliders, Upload,
   ShieldCheck, Sparkles, Layers, BookOpenCheck, ChevronLeft, ChevronRight,
+  ScrollText,
 } from "lucide-react";
 import logo from "@/assets/logo.svg";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/hover-card";
 
 import { useRBAC, type UserRole } from "@/contexts/RBACContext";
+import { PERMISSION_INSTITUTION_SETTINGS } from "@/services/apiClient";
 
 /* ─────────────────────────────────────────────────────────────────── */
 /* DATA & CATEGORIES HIÉRARCHIQUES                                     */
@@ -37,6 +39,14 @@ export interface MenuItem {
   description?: string;
   allowedRoles?: UserRole[];
   requiredPermission?: string;
+  /**
+   * Reproduit le `allowSuperuser={false}` de la route correspondante.
+   *
+   * Les portails personnels (enseignant, etudiant) sont refuses a
+   * l'administrateur : sans cette option, `hasAccess` leur accorde tout et
+   * le menu advertise une page qui affiche « Acces reserve ».
+   */
+  allowSuperuser?: boolean;
 }
 
 export interface NavigationSection {
@@ -47,6 +57,8 @@ export interface NavigationSection {
   bgLightClass: string;
   allowedRoles?: UserRole[];
   requiredPermission?: string;
+  /** Voir `MenuItem.allowSuperuser`. */
+  allowSuperuser?: boolean;
   items: MenuItem[];
 }
 
@@ -80,6 +92,7 @@ export const navigationSections: NavigationSection[] = [
       { title: "Pré-inscriptions", icon: UserPlus, href: "/pre-inscription", description: "Candidatures persistées et suivi des dossiers" , requiredPermission: "admissions.read" },
       { title: "Validation dossiers", icon: FileCheck, href: "/validation", description: "Pièces, décisions et conversion étudiants" , requiredPermission: "admissions.read" },
       { title: "Registre Étudiants", icon: Users, href: "/etudiants", description: "Dossiers scolaires et fiches individuelles" , requiredPermission: "students.read" },
+      { title: "Documents officiels", icon: ScrollText, href: "/documents", description: "Certificats, relevés et quitus", requiredPermission: "documents.issue" },
       { title: "Import d'étudiants", icon: Upload, href: "/etudiants/import", description: "Chargement Excel en deux temps avec rapport", allowedRoles: ["ADMIN", "DIRECTEUR_ETUDES", "SECRETARIAT"], requiredPermission: "students.write" },
     ],
   },
@@ -106,7 +119,7 @@ export const navigationSections: NavigationSection[] = [
     items: [
       { title: "Enseignants", icon: GraduationCap, href: "/enseignants", description: "Corps professoral, vacataires et titulaires", allowedRoles: ["ADMIN", "SECRETARIAT"] , requiredPermission: "users.manage" },
       { title: "Personnel", icon: UserCog, href: "/personnel", description: "Comptes du personnel administratif et technique", allowedRoles: ["ADMIN", "SECRETARIAT"] , requiredPermission: "users.manage" },
-      { title: "Portail Enseignant", icon: GraduationCap, href: "/portail-enseignant", description: "Espace réservé aux professeurs", allowedRoles: ["ENSEIGNANT"] },
+      { title: "Portail Enseignant", icon: GraduationCap, href: "/portail-enseignant", description: "Espace réservé aux professeurs", allowedRoles: ["ENSEIGNANT"], allowSuperuser: false },
     ],
   },
   {
@@ -131,7 +144,7 @@ export const navigationSections: NavigationSection[] = [
     bgLightClass: "bg-teal-500/10",
     allowedRoles: ["ADMIN", "ETUDIANT", "ENSEIGNANT", "SECRETARIAT"],
     items: [
-      { title: "Espace Étudiant", icon: UserCircle, href: "/espace-etudiant", description: "Portail self-service étudiant", allowedRoles: ["ETUDIANT"] },
+      { title: "Espace Étudiant", icon: UserCircle, href: "/espace-etudiant", description: "Portail self-service étudiant", allowedRoles: ["ETUDIANT"], allowSuperuser: false },
     ],
   },
   {
@@ -156,7 +169,10 @@ export const navigationSections: NavigationSection[] = [
     items: [
       { title: "Comptes Utilisateurs", icon: Users, href: "/utilisateurs", description: "Accès au système et annuaire", requiredPermission: "users.manage" },
       { title: "Rôles & Permissions", icon: ShieldCheck, href: "/roles-permissions", description: "Matrice de sécurité RBAC", requiredPermission: "roles.manage" },
-      { title: "Paramétrage Général", icon: Sliders, href: "/parametrage", description: "Configuration de l'établissement", allowedRoles: ["ADMIN"] },
+      // Permission seule, sans `allowedRoles` : `institution.settings` peut
+      // etre deleguee a une direction, et une restriction de role plus
+      // etroite que la fenetre de la permission annulerait cette delegation.
+      { title: "Paramétrage Général", icon: Sliders, href: "/parametrage", description: "Configuration de l'établissement", requiredPermission: PERMISSION_INSTITUTION_SETTINGS },
     ],
   },
 ];
@@ -180,7 +196,7 @@ export const Sidebar = ({
 }: SidebarProps) => {
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
-  const { hasAccess, hasPermission, currentRoleInfo } = useRBAC();
+  const { hasAccess, hasPermission, currentRole, currentRoleInfo } = useRBAC();
 
   /**
    * Un module est visible si le rôle historique ET la permission serveur
@@ -192,14 +208,21 @@ export const Sidebar = ({
    * accès plus étroit que la fenêtre de la permission.
    */
   const canSee = useCallback(
-    (entry: { allowedRoles?: UserRole[]; requiredPermission?: string }): boolean => {
-      const roleOk = hasAccess(entry.allowedRoles);
+    (entry: {
+      allowedRoles?: UserRole[];
+      requiredPermission?: string;
+      allowSuperuser?: boolean;
+    }): boolean => {
+      const roleOk =
+        entry.allowSuperuser === false
+          ? Boolean(entry.allowedRoles?.includes(currentRole))
+          : hasAccess(entry.allowedRoles);
       const permissionOk = entry.requiredPermission
         ? hasPermission(entry.requiredPermission)
         : true;
       return roleOk && permissionOk;
     },
-    [hasAccess, hasPermission]
+    [currentRole, hasAccess, hasPermission]
   );
 
   const accessibleSections = useMemo(() => {
@@ -211,11 +234,13 @@ export const Sidebar = ({
       .filter(
         (section) =>
           section.items.length > 0 &&
-          (!section.allowedRoles ||
-            hasAccess(section.allowedRoles) ||
-            (section.requiredPermission
-              ? hasPermission(section.requiredPermission)
-              : false))
+          (section.allowSuperuser === false
+            ? canSee(section)
+            : !section.allowedRoles ||
+              hasAccess(section.allowedRoles) ||
+              (section.requiredPermission
+                ? hasPermission(section.requiredPermission)
+                : false))
       );
   }, [canSee, hasAccess, hasPermission]);
 

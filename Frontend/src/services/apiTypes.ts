@@ -267,6 +267,60 @@ export interface ImportModele {
   notes: string[];
 }
 
+export type DocumentTypeCode = "certificat_scolarite" | "releve_notes" | "quitus_financier";
+
+export interface TypeDocument {
+  code: DocumentTypeCode;
+  prefixe: string;
+  libelle: string;
+  description: string;
+  permission: string;
+  avec_tableau: boolean;
+  /** Conditions a satisfaire pour pouvoir emettre le document. */
+  conditions: string[];
+}
+
+export interface DocumentOfficiel {
+  id: string;
+  type_document: DocumentTypeCode;
+  numero: string;
+  etudiant_id: string;
+  session_id?: string | null;
+  annee: number;
+  fichier?: string;
+  sha256: string;
+  taille_octets: number;
+  donnees: Record<string, unknown>;
+  reserves: string[];
+  remplace_document_id?: string | null;
+  motif_duplicata?: string | null;
+  emis_par_id?: number | null;
+  emis_le: string;
+  delivre_le?: string | null;
+  created_at?: string | null;
+  etudiant_nom?: string | null;
+  etudiant_prenom?: string | null;
+  etudiant_matricule?: string | null;
+  libelle?: string | null;
+}
+
+export interface ResultatLigneDocument {
+  etudiant_id: string;
+  matricule?: string | null;
+  nom?: string | null;
+  emis: boolean;
+  numero?: string | null;
+  document_id?: string | null;
+  motif?: string | null;
+}
+
+export interface LotDocuments {
+  type_document: DocumentTypeCode;
+  emis: number;
+  echoues: number;
+  lignes: ResultatLigneDocument[];
+}
+
 export interface AuditEvent {
   id: string;
   occurred_at: string;
@@ -706,4 +760,68 @@ export interface CandidatureUpdatePayload {
   session_id?: string | null;
   notes?: string | null;
   source?: string | null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Configuration institutionnelle                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Identite imprimable de l'etablissement, dans sa version en vigueur.
+ *
+ * `logo_present` distingue la configuration du disque : un logo enregistre
+ * dont le fichier a disparu est signale `false`, pour ne pas laisser croire
+ * a un branding actif.
+ */
+export interface InstitutionConfig {
+  version: number;
+  nom: string;
+  sigle: string;
+  adresse: string | null;
+  telephone: string | null;
+  email: string;
+  pays: string | null;
+  devise: string;
+  annee_academique_active: string | null;
+  logo_present: boolean;
+}
+
+/** Champs modifiables. Tous facultatifs : seuls ceux envoyes sont touches. */
+export interface InstitutionConfigPayload {
+  nom?: string;
+  sigle?: string;
+  adresse?: string | null;
+  telephone?: string | null;
+  email?: string;
+  pays?: string | null;
+  devise?: string;
+}
+
+/** Valeur d'un champ avant/apres une modification. */
+export interface ChampModifie {
+  avant: string | null;
+  apres: string | null;
+}
+
+/**
+ * Reponse a une ecriture.
+ *
+ * `modifications` vide signifie « rien n'a change » : aucune version n'a ete
+ * creee. C'est un resultat normal, pas un echec.
+ */
+export interface InstitutionConfigModifiee {
+  configuration: InstitutionConfig;
+  version: number;
+  modifications: Record<string, ChampModifie>;
+}
+
+/** Entree de l'historique des versions de la configuration. */
+export interface ConfigurationVersion {
+  version: number;
+  nature: "etablissement" | "branding" | string;
+  modifications: Record<string, ChampModifie>;
+  logo_present: boolean;
+  modifie_par_email: string | null;
+  created_at: string;
+  instantane: Record<string, unknown>;
 }

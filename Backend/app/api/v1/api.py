@@ -5,12 +5,14 @@ Agrégation des routeurs de l'API v1.
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
     setup,
+    institution,
     auth,
     sessions,
     structure,
     academic,
     etudiants,
     etudiants_import,
+    documents,
     pedagogie,
     finances,
     users,
@@ -25,10 +27,19 @@ from app.api.v1.endpoints import (
 api_router = APIRouter()
 
 api_router.include_router(setup.router, prefix="/setup", tags=["Setup Wizard"])
+api_router.include_router(
+    institution.router,
+    prefix="/institution",
+    tags=["Configuration institutionnelle"],
+)
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentification"])
 api_router.include_router(sessions.router, prefix="/sessions", tags=["Sessions Académiques"])
 api_router.include_router(structure.router, prefix="/structure", tags=["Structure Académique"])
 api_router.include_router(academic.router, prefix="/academic", tags=["Socle Académique"])
+# Documents officiels : consultation, emission, duplicata, telechargement.
+api_router.include_router(
+    documents.router, prefix="/documents", tags=["Documents officiels"]
+)
 # Import massif : analyse (dry-run) puis validation explicite.
 # Monte AVANT ``etudiants`` : ``/etudiants/{etudiant_id}`` est un GET et
 # capterait sinon ``/etudiants/import``.

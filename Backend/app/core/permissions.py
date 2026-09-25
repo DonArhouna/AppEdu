@@ -63,6 +63,11 @@ PERMISSION_CATALOG: tuple[PermissionDefinition, ...] = (
     _permission("finance.read", "Consulter les finances", "Acces en lecture aux grilles tarifaires, factures, paiements et recus."),
     _permission("finance.write", "Gerer les finances", "Creation et modification des grilles tarifaires, factures, paiements et recus."),
     _permission("users.manage", "Administrer les comptes", "Consultation et administration des comptes utilisateurs."),
+    _permission(
+        "documents.issue",
+        "Emettre les documents officiels",
+        "Generation des certificats de scolarite, releves de notes et quitus financiers.",
+    ),
     _permission("roles.manage", "Administrer les roles et permissions", "Gestion du catalogue de permissions, des roles et des affectations."),
     _permission("audit.read", "Consulter le journal d'audit", "Acces en lecture des evenements de securite."),
 )
