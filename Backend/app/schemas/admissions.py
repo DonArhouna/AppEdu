@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from app.schemas.etudiant import EtudiantResponse
 from app.schemas.session import SessionAcademiqueResponse
 from app.schemas.structure import FiliereResponse
+from app.schemas.academic import ClasseResponse, InscriptionResponse, NiveauResponse
 
 
 class StatutCandidature(str, Enum):
@@ -45,8 +46,12 @@ class CandidatureBase(BaseModel):
     email: EmailStr
     telephone: Optional[str] = Field(None, max_length=50)
     adresse: Optional[str] = Field(None, max_length=500)
-    filiere_id: str = Field(..., min_length=1, max_length=50)
-    niveau: str = Field(..., min_length=1, max_length=50)
+    # `filiere_id` et `niveau` restent des projections legacy.  Lorsqu'une
+    # classe canonique est fournie, l'endpoint les derive de la classe.
+    filiere_id: Optional[str] = Field(None, min_length=1, max_length=50)
+    niveau: Optional[str] = Field(None, min_length=1, max_length=50)
+    niveau_id: Optional[str] = Field(None, min_length=1, max_length=50)
+    classe_id: Optional[str] = Field(None, min_length=1, max_length=50)
     session_id: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = None
     source: Optional[str] = Field(None, max_length=100)
@@ -68,6 +73,8 @@ class CandidatureUpdate(BaseModel):
     adresse: Optional[str] = Field(None, max_length=500)
     filiere_id: Optional[str] = Field(None, min_length=1, max_length=50)
     niveau: Optional[str] = Field(None, min_length=1, max_length=50)
+    niveau_id: Optional[str] = Field(None, min_length=1, max_length=50)
+    classe_id: Optional[str] = Field(None, min_length=1, max_length=50)
     session_id: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = None
     source: Optional[str] = Field(None, max_length=100)
@@ -130,6 +137,8 @@ class CandidatureResponse(CandidatureBase):
     created_at: datetime
     updated_at: datetime
     filiere: Optional[FiliereResponse] = None
+    niveau_obj: Optional[NiveauResponse] = None
+    classe: Optional[ClasseResponse] = None
     session: Optional[SessionAcademiqueResponse] = None
     pieces: List[PieceCandidatureResponse] = Field(default_factory=list)
     decisions: List[DecisionAdmissionResponse] = Field(default_factory=list)
@@ -213,3 +222,4 @@ class CandidatureStatusUpdate(BaseModel):
 class CandidatureConversionResponse(BaseModel):
     candidature: CandidatureResponse
     etudiant: EtudiantResponse
+    inscription: Optional[InscriptionResponse] = None

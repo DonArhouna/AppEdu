@@ -21,8 +21,21 @@ import app.models.etudiant
 import app.models.finance
 from app.schemas.setup import SetupStatusResponse, SetupInitRequest, SetupInitResponse
 from app.schemas.user import UserResponse
+from app.services.audit_service import record_audit_event
 
 router = APIRouter()
+
+_SETUP_ADVISORY_LOCK_ID = 7_310_024_001
+
+
+async def _lock_setup_initialization(db: AsyncSession) -> None:
+    """Sérialise le premier setup dans PostgreSQL jusqu'au commit."""
+
+    if db.get_bind().dialect.name == "postgresql":
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_id)"),
+            {"lock_id": _SETUP_ADVISORY_LOCK_ID},
+        )
 
 
 @router.get("/status", response_model=SetupStatusResponse, summary="État d'initialisation du système")
@@ -88,8 +101,9 @@ async def initialize_system(
     3. Génération d'un JWT d'accès à titre de confirmation technique.
     Les données métier sont ensuite saisies progressivement via les modules API.
     """
-    # 1. Vérifier si déjà configuré
+    # 1. Sérialiser puis vérifier si l'instance est déjà configurée.
     try:
+        await _lock_setup_initialization(db)
         stmt = select(Etablissement).where(Etablissement.is_configured == True)
         result = await db.execute(stmt)
         existing = result.scalar_one_or_none()
@@ -136,6 +150,18 @@ async def initialize_system(
     )
     db.add(admin_user)
     await db.flush()  # Pour récupérer l'id autogénéré
+    await record_audit_event(
+        db,
+        actor_id=admin_user.id,
+        actor_email=admin_user.email,
+        action="security.setup.initialized",
+        resource_type="etablissement",
+        resource_id=etablissement.id,
+        details={
+            "admin_user_id": admin_user.id,
+            "admin_role": admin_user.role,
+        },
+    )
 
     await db.commit()
     await db.refresh(admin_user)

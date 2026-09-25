@@ -142,28 +142,28 @@ const Dashboard = () => {
             title="Total Étudiants"
             value={data.totalEtudiants.toLocaleString("fr-FR")}
             icon={Users}
-            trendLabel="Effectif total inscrit"
+            subtitle="Effectif total inscrit"
             colorVariant="primary"
           />
           <KpiCard
             title="Inscriptions Actives"
             value={data.etudiantsActifs.toLocaleString("fr-FR")}
             icon={UserCheck}
-            trendLabel="Dossiers régularisés"
+            subtitle="Dossiers régularisés"
             colorVariant="emerald"
           />
           <KpiCard
             title="Filières enregistrées"
             value={data.totalFilieres.toString()}
             icon={GraduationCap}
-            trendLabel="Offre de formation"
+            subtitle="Offre de formation"
             colorVariant="purple"
           />
           <KpiCard
             title="Total Encaissé"
             value={`${data.totalEncaisse.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`}
             icon={CreditCard}
-            trendLabel="Encaissements validés"
+            subtitle="Encaissements validés"
             colorVariant="amber"
           />
         </div>

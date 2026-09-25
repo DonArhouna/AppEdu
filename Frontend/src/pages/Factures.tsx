@@ -43,7 +43,7 @@ const Factures = () => {
     try {
       const [res, studentsResult, setupResult] = await Promise.all([
         financesApi.getFactures(),
-        etudiantsApi.getAll(),
+        etudiantsApi.getSummary(),
         setupApi.getStatus(),
       ]);
       if (res.error || studentsResult.error) {
@@ -147,21 +147,21 @@ const Factures = () => {
           title="Total Facturé"
           value={`${totalFacture.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`}
           icon={DollarSign}
-          trendLabel={`${factures.length} factures générées`}
+          subtitle={`${factures.length} factures générées`}
           colorVariant="primary"
         />
         <KpiCard
           title="Montant Recouvré"
           value={`${totalPaye.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`}
           icon={CheckCircle2}
-          trendLabel={`${totalFacture > 0 ? Math.round((totalPaye / totalFacture) * 100) : 0}% de recouvrement`}
+          subtitle={`${totalFacture > 0 ? Math.round((totalPaye / totalFacture) * 100) : 0}% de recouvrement`}
           colorVariant="emerald"
         />
         <KpiCard
           title="Reste à Recouvrer"
           value={`${totalImpaye.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`}
           icon={Clock}
-          trendLabel="Créances en cours"
+          subtitle="Créances en cours"
           colorVariant="amber"
         />
       </div>

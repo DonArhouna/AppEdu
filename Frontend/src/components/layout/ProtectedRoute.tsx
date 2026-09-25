@@ -10,6 +10,8 @@ import { ArrowLeft, Lock } from "lucide-react";
 
 interface ProtectedRouteProps {
   allowedRoles?: UserRole[];
+  /** Permission dynamique requise, en plus du contrôle de rôle historique. */
+  requiredPermission?: string;
   /** Désactive le bypass global de l'administrateur pour les portails personnels. */
   allowSuperuser?: boolean;
   children: React.ReactNode;
@@ -17,11 +19,12 @@ interface ProtectedRouteProps {
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   allowedRoles,
+  requiredPermission,
   allowSuperuser = true,
   children,
 }) => {
   const { user, isLoading } = useAuth();
-  const { currentRole, currentRoleInfo, hasAccess } = useRBAC();
+  const { currentRole, currentRoleInfo, hasAccess, hasPermission } = useRBAC();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -34,9 +37,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <PageLoader />;
   }
 
-  const canAccess = allowSuperuser
+  const roleAllowed = allowSuperuser
     ? (!allowedRoles || allowedRoles.length === 0 || hasAccess(allowedRoles))
     : Boolean(allowedRoles?.includes(currentRole));
+  const permissionAllowed = !requiredPermission || hasPermission(requiredPermission);
+  const canAccess = roleAllowed && permissionAllowed;
 
   if (canAccess) {
     return <>{children}</>;
@@ -60,6 +65,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
               Votre profil (
               <strong className="text-foreground">{currentRoleInfo.label}</strong>) ne dispose pas
               des privilèges nécessaires pour accéder à cette ressource.
+              {requiredPermission && (
+                <span className="mt-1 block text-xs">Permission requise : {requiredPermission}</span>
+              )}
             </p>
           </div>
 

@@ -21,6 +21,19 @@ export interface AuthUser {
   is_superuser: boolean;
   etudiant_id?: string | null;
   avatar_url?: string | null;
+  roles?: string[];
+  /**
+   * Autorite dynamique pure : uniquement ce que les roles dynamiques
+   * affectes accordent. Source de verite pour l'ecran d'administration.
+   */
+  permissions?: string[];
+  /**
+   * Droits reellement exerçables, calcules par le backend (dynamiques +
+   * fenetre de compatibilite du role legacy). C'est ce champ que l'interface
+   * doit utiliser : aucune matrice de permissions n'est maintenue ici.
+   */
+  permissions_effectives?: string[];
+  authz_version?: string | null;
 }
 
 interface LoginResponse {
@@ -81,7 +94,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (result.error || !result.data?.user) {
       return result;
     }
-    setUser(result.data.user as AuthUser);
+    // Le login historique ne contient pas encore l'état RBAC dynamique.
+    // On recharge /auth/me pour obtenir rôles, permissions et authz_version.
+    const profile = await authApi.getMe();
+    setUser((profile.data as AuthUser | undefined) || (result.data.user as AuthUser));
     setIsLoading(false);
     return result;
   }, []);

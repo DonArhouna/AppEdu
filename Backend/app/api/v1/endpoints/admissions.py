@@ -15,11 +15,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_db, require_admissions
+from app.api.deps import get_db, require_admissions_read, require_admissions_write
+from app.models.academic import Classe, Niveau
 from app.models.admissions import Candidature, DecisionAdmission, PieceCandidature
 from app.models.etudiant import Etudiant
 from app.models.session_academique import SessionAcademique
 from app.models.structure import Filiere
+from app.services.academic_service import (
+    class_projections,
+    get_classe,
+    get_niveau,
+    load_inscription,
+    sync_active_inscription,
+)
 from app.models.utilisateur import Utilisateur
 from app.schemas.admissions import (
     CandidatureConversionResponse,
@@ -80,6 +88,9 @@ async def _load_candidature(db: AsyncSession, candidature_id: str) -> Candidatur
             selectinload(Candidature.pieces),
             selectinload(Candidature.decisions),
             selectinload(Candidature.filiere),
+            selectinload(Candidature.niveau_obj).selectinload(Niveau.cycle),
+            selectinload(Candidature.classe).selectinload(Classe.filiere),
+            selectinload(Candidature.classe).selectinload(Classe.niveau).selectinload(Niveau.cycle),
             selectinload(Candidature.session).selectinload(SessionAcademique.periodes),
         )
         .where(Candidature.id == candidature_id)
@@ -111,6 +122,71 @@ async def _validate_references(
                 detail="La session académique sélectionnée n'existe pas.",
             )
     return filiere, session
+
+
+async def _resolve_candidature_references(
+    db: AsyncSession,
+    *,
+    filiere_id: str | None,
+    niveau: str | None,
+    niveau_id: str | None,
+    classe_id: str | None,
+    session_id: str | None,
+) -> tuple[Filiere, SessionAcademique | None, Niveau | None, Classe | None]:
+    """Résout le chemin canonique ou legacy sans inventer de mapping."""
+    session = None
+    if session_id:
+        session = await db.get(SessionAcademique, session_id)
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La session académique sélectionnée n'existe pas.",
+            )
+
+    if classe_id:
+        classe = await get_classe(db, classe_id)
+        if classe is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La classe sélectionnée n'existe pas.",
+            )
+        if filiere_id and filiere_id != classe.filiere_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La filière fournie ne correspond pas à la classe sélectionnée.",
+            )
+        if niveau_id and niveau_id != classe.niveau_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Le niveau fourni ne correspond pas à la classe sélectionnée.",
+            )
+        return classe.filiere, session, classe.niveau, classe
+
+    if not filiere_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La filière ou une classe doit être fournie.",
+        )
+    filiere = await db.get(Filiere, filiere_id)
+    if filiere is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La filière sélectionnée n'existe pas.",
+        )
+    niveau_obj = await get_niveau(db, niveau_id) if niveau_id else None
+    if niveau_id and niveau_obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Le niveau sélectionné n'existe pas.",
+        )
+    # ``niveau`` n'est pas obligatoire lorsqu'une classe est fournie; pour le
+    # chemin legacy, la colonne historique reste obligatoire.
+    if not classe_id and not (niveau or (niveau_obj.nom if niveau_obj else "")):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Le niveau est obligatoire sur le chemin legacy.",
+        )
+    return filiere, session, niveau_obj, None
 
 
 def _assert_not_closed(candidature: Candidature) -> None:
@@ -174,11 +250,13 @@ async def list_candidatures(
     search: str | None = Query(None, description="Nom, prénom, email ou référence"),
     statut: StatutCandidature | None = None,
     filiere_id: str | None = None,
+    niveau_id: str | None = None,
+    classe_id: str | None = None,
     session_id: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _auth: Utilisateur = Depends(require_admissions),
+    _auth: Utilisateur = Depends(require_admissions_read),
 ):
     filters = []
     if search:
@@ -195,6 +273,10 @@ async def list_candidatures(
         filters.append(Candidature.statut == statut.value)
     if filiere_id:
         filters.append(Candidature.filiere_id == filiere_id)
+    if niveau_id:
+        filters.append(Candidature.niveau_id == niveau_id)
+    if classe_id:
+        filters.append(Candidature.classe_id == classe_id)
     if session_id:
         filters.append(Candidature.session_id == session_id)
 
@@ -210,6 +292,9 @@ async def list_candidatures(
             selectinload(Candidature.pieces),
             selectinload(Candidature.decisions),
             selectinload(Candidature.filiere),
+            selectinload(Candidature.niveau_obj).selectinload(Niveau.cycle),
+            selectinload(Candidature.classe).selectinload(Classe.filiere),
+            selectinload(Candidature.classe).selectinload(Classe.niveau).selectinload(Niveau.cycle),
             selectinload(Candidature.session).selectinload(SessionAcademique.periodes),
         )
         .order_by(
@@ -250,9 +335,33 @@ async def list_candidatures(
 async def create_candidature(
     payload: CandidatureCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Utilisateur = Depends(require_admissions),
+    current_user: Utilisateur = Depends(require_admissions_write),
 ):
-    filiere, _ = await _validate_references(db, payload.filiere_id, payload.session_id)
+    filiere, session, niveau_obj, classe = await _resolve_candidature_references(
+        db,
+        filiere_id=payload.filiere_id,
+        niveau=payload.niveau,
+        niveau_id=payload.niveau_id,
+        classe_id=payload.classe_id,
+        session_id=payload.session_id,
+    )
+    if classe is not None:
+        canonical_niveau = classe.niveau.nom or classe.niveau.code
+        if payload.niveau and payload.niveau.strip() not in {
+            canonical_niveau,
+            classe.niveau.code,
+        }:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Le niveau fourni ne correspond pas à la classe sélectionnée.",
+            )
+        niveau_text = canonical_niveau
+        niveau_id = classe.niveau_id
+    else:
+        niveau_text = (
+            (niveau_obj.nom or niveau_obj.code) if niveau_obj else (payload.niveau or "")
+        ).strip()
+        niveau_id = niveau_obj.id if niveau_obj else payload.niveau_id
     candidature = Candidature(
         id=str(uuid.uuid4()),
         reference=f"CAND-{date.today().year}-{uuid.uuid4().hex[:10].upper()}",
@@ -264,7 +373,9 @@ async def create_candidature(
         telephone=payload.telephone,
         adresse=payload.adresse,
         filiere_id=filiere.id,
-        niveau=payload.niveau.strip(),
+        niveau=niveau_text,
+        niveau_id=niveau_id,
+        classe_id=classe.id if classe else None,
         session_id=payload.session_id,
         statut=StatutCandidature.NOUVELLE.value,
         date_demande=payload.date_demande or date.today(),
@@ -273,7 +384,11 @@ async def create_candidature(
         created_by_id=current_user.id,
     )
     db.add(candidature)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Impossible de créer la candidature.") from exc
     return await _load_candidature(db, candidature.id)
 
 
@@ -285,7 +400,7 @@ async def create_candidature(
 async def get_candidature(
     candidature_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth: Utilisateur = Depends(require_admissions),
+    _auth: Utilisateur = Depends(require_admissions_read),
 ):
     return await _load_candidature(db, candidature_id)
 
@@ -299,26 +414,74 @@ async def update_candidature(
     candidature_id: str,
     payload: CandidatureUpdate,
     db: AsyncSession = Depends(get_db),
-    _auth: Utilisateur = Depends(require_admissions),
+    _auth: Utilisateur = Depends(require_admissions_write),
 ):
     candidature = await _load_candidature(db, candidature_id)
     _assert_not_closed(candidature)
     data = payload.model_dump(exclude_unset=True)
-    required_fields = ("nom", "prenom", "email", "filiere_id", "niveau")
-    if any(field in data and data[field] is None for field in required_fields):
+    if any(field in data and data[field] is None for field in ("nom", "prenom", "email")):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Les champs nom, prénom, email, filière et niveau ne peuvent pas être vidés.",
+            detail="Les champs nom, prénom et email ne peuvent pas être vidés.",
         )
     if data.get("email"):
         data["email"] = str(data["email"]).lower().strip()
-    if "filiere_id" in data:
-        await _validate_references(db, data["filiere_id"], data.get("session_id", candidature.session_id))
-    elif "session_id" in data and data["session_id"] is not None:
-        await _validate_references(db, candidature.filiere_id, data["session_id"])
+
+    target_classe_id = data.get("classe_id", candidature.classe_id)
+    class_change_requested = "classe_id" in data and data["classe_id"] != candidature.classe_id
+    # Lors d'un changement de classe, les projections legacy sont derives ;
+    # on ne compare donc pas l'ancienne filière/niveau à la nouvelle classe.
+    if target_classe_id and class_change_requested:
+        requested_filiere_id = data.get("filiere_id")
+        requested_niveau = data.get("niveau")
+        target_niveau_id = data.get("niveau_id")
+    else:
+        requested_filiere_id = data.get("filiere_id", candidature.filiere_id)
+        requested_niveau = data.get("niveau", candidature.niveau)
+        target_niveau_id = data.get("niveau_id", candidature.niveau_id)
+    target_session_id = data.get("session_id", candidature.session_id)
+    filiere, _session, niveau_obj, classe = await _resolve_candidature_references(
+        db,
+        filiere_id=requested_filiere_id,
+        niveau=requested_niveau,
+        niveau_id=target_niveau_id,
+        classe_id=target_classe_id,
+        session_id=target_session_id,
+    )
+    if classe is not None:
+        canonical_niveau = classe.niveau.nom or classe.niveau.code
+        if requested_niveau and requested_niveau.strip() not in {
+            canonical_niveau,
+            classe.niveau.code,
+        }:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Le niveau fourni ne correspond pas à la classe sélectionnée.",
+            )
+        data["filiere_id"] = filiere.id
+        data["niveau"] = canonical_niveau
+        data["niveau_id"] = classe.niveau_id
+        data["classe_id"] = classe.id
+    else:
+        if not (requested_niveau or (niveau_obj.nom if niveau_obj else "")):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Le niveau est obligatoire sur le chemin legacy.",
+            )
+        data["filiere_id"] = filiere.id
+        data["niveau"] = (
+            (niveau_obj.nom or niveau_obj.code) if niveau_obj else requested_niveau
+        )
+        data["niveau_id"] = niveau_obj.id if niveau_obj else data.get("niveau_id", candidature.niveau_id)
+        data["classe_id"] = target_classe_id
+    data["session_id"] = target_session_id
     for field, value in data.items():
         setattr(candidature, field, value)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Conflit lors de la modification de la candidature.") from exc
     return await _load_candidature(db, candidature_id)
 
 
@@ -331,7 +494,7 @@ async def update_candidature_status(
     candidature_id: str,
     payload: CandidatureStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    _auth: Utilisateur = Depends(require_admissions),
+    _auth: Utilisateur = Depends(require_admissions_write),
 ):
     candidature = await _load_candidature(db, candidature_id)
     _apply_status_transition(candidature, payload.statut, payload.commentaire)
@@ -347,7 +510,7 @@ async def update_candidature_status(
 async def bulk_update_candidatures(
     payload: BulkCandidatureAction,
     db: AsyncSession = Depends(get_db),
-    _auth: Utilisateur = Depends(require_admissions),
+    _auth: Utilisateur = Depends(require_admissions_write),
 ):
     targets = {
         "mettre_en_verification": StatutCandidature.EN_VERIFICATION,
@@ -381,7 +544,7 @@ async def add_candidature_document(
     candidature_id: str,
     payload: PieceCandidatureCreate,
     db: AsyncSession = Depends(get_db),
-    _auth: Utilisateur = Depends(require_admissions),
+    _auth: Utilisateur = Depends(require_admissions_write),
 ):
     candidature = await _load_candidature(db, candidature_id)
     _assert_not_closed(candidature)
@@ -409,7 +572,7 @@ async def upload_candidature_document(
     piece_id: str,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _auth: Utilisateur = Depends(require_admissions),
+    _auth: Utilisateur = Depends(require_admissions_write),
 ):
     """Écrit les octets dans le stockage local et ne persiste que son chemin relatif."""
     piece = await db.get(PieceCandidature, piece_id)
@@ -460,7 +623,7 @@ async def upload_candidature_document(
 async def download_candidature_document(
     piece_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth: Utilisateur = Depends(require_admissions),
+    _auth: Utilisateur = Depends(require_admissions_read),
 ):
     piece = await db.get(PieceCandidature, piece_id)
     if not piece:
@@ -503,7 +666,7 @@ async def update_candidature_document(
     piece_id: str,
     payload: PieceCandidatureUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: Utilisateur = Depends(require_admissions),
+    current_user: Utilisateur = Depends(require_admissions_write),
 ):
     piece = await db.get(PieceCandidature, piece_id)
     if not piece:
@@ -551,7 +714,7 @@ async def decide_candidature(
     candidature_id: str,
     payload: DecisionAdmissionCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Utilisateur = Depends(require_admissions),
+    current_user: Utilisateur = Depends(require_admissions_write),
 ):
     candidature = await _load_candidature(db, candidature_id)
     if candidature.statut in {
@@ -606,7 +769,7 @@ async def decide_candidature(
 async def convert_candidature(
     candidature_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth: Utilisateur = Depends(require_admissions),
+    _auth: Utilisateur = Depends(require_admissions_write),
 ):
     candidature = await _load_candidature(db, candidature_id)
     if candidature.statut != StatutCandidature.ACCEPTEE.value:
@@ -632,7 +795,22 @@ async def convert_candidature(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="L'adresse ne peut pas dépasser 255 caractères pour le dossier étudiant.",
         )
-    filiere = await db.get(Filiere, candidature.filiere_id)
+    # La conversion legacy reste volontairement additive.  Si et seulement si
+    # la classe et la session sont connues, on crée aussi l'inscription
+    # canonique; sinon on conserve exactement le chemin historique.
+    canonical_classe = None
+    if candidature.classe_id and candidature.session_id:
+        canonical_classe = await get_classe(db, candidature.classe_id)
+        if canonical_classe is None:
+            raise HTTPException(status_code=422, detail="La classe de la candidature est introuvable.")
+        if await db.get(SessionAcademique, candidature.session_id) is None:
+            raise HTTPException(status_code=422, detail="La session de la candidature est introuvable.")
+        filiere = canonical_classe.filiere
+        projections = class_projections(canonical_classe)
+        niveau_text = projections["niveau"]
+    else:
+        filiere = await db.get(Filiere, candidature.filiere_id)
+        niveau_text = candidature.niveau
     if not filiere:
         raise HTTPException(status_code=422, detail="La filière de la candidature est introuvable.")
     if len(filiere.nom) > 100:
@@ -653,14 +831,24 @@ async def convert_candidature(
         adresse=candidature.adresse,
         filiere=filiere.nom,
         filiere_id=filiere.id,
-        niveau=candidature.niveau,
+        niveau=niveau_text,
+        classe_id=canonical_classe.id if canonical_classe else None,
         statut="Inscrit",
         date_inscription=date.today(),
         session_id=candidature.session_id,
     )
     db.add(etudiant)
+    inscription = None
     try:
         await db.flush()
+        if canonical_classe is not None and candidature.session_id:
+            inscription, _created = await sync_active_inscription(
+                db,
+                etudiant_id=etudiant.id,
+                classe_id=canonical_classe.id,
+                session_id=candidature.session_id,
+                date_inscription=etudiant.date_inscription,
+            )
         candidature.etudiant_id = etudiant.id
         candidature.statut = StatutCandidature.CONVERTI.value
         await db.commit()
@@ -668,9 +856,22 @@ async def convert_candidature(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Impossible de créer le dossier étudiant : email ou matricule déjà utilisé.",
+            detail="Impossible de créer le dossier étudiant : email, matricule ou inscription déjà utilisé.",
         ) from exc
+
+    student_result = await db.execute(
+        select(Etudiant)
+        .options(
+            selectinload(Etudiant.classe).selectinload(Classe.filiere),
+            selectinload(Etudiant.classe).selectinload(Classe.niveau).selectinload(Niveau.cycle),
+            selectinload(Etudiant.inscriptions),
+        )
+        .where(Etudiant.id == etudiant.id)
+    )
+    loaded_student = student_result.scalar_one()
+    loaded_inscription = await load_inscription(db, inscription.id) if inscription else None
     return CandidatureConversionResponse(
         candidature=await _load_candidature(db, candidature.id),
-        etudiant=etudiant,
+        etudiant=loaded_student,
+        inscription=loaded_inscription,
     )

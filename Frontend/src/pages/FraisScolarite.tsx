@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -230,41 +231,10 @@ const FraisScolarite = () => {
         </Card>
       )}
 
-      <div className="grid gap-5 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">Grilles actives</CardTitle>
-            <Layers className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{activeConfigs.length}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Configurations actuellement disponibles</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">Droits moyens</CardTitle>
-            <DollarSign className="h-4 w-4 text-emerald-600" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-emerald-600">
-              {averageInscription.toLocaleString("fr-FR")} {currencyLabel}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">Moyenne des grilles actives</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">Mensualité moyenne</CardTitle>
-            <DollarSign className="h-4 w-4 text-violet-600" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-violet-600">
-              {averageMensualite.toLocaleString("fr-FR")} {currencyLabel}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">Montant mensuel moyen déclaré</p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 md:grid-cols-3">
+        <KpiCard title="Grilles actives" value={activeConfigs.length} icon={Layers} subtitle="Configurations disponibles" colorVariant="primary" />
+        <KpiCard title="Droits moyens" value={`${averageInscription.toLocaleString("fr-FR")} ${currencyLabel}`} icon={DollarSign} subtitle="Moyenne des grilles actives" colorVariant="emerald" />
+        <KpiCard title="Mensualité moyenne" value={`${averageMensualite.toLocaleString("fr-FR")} ${currencyLabel}`} icon={DollarSign} subtitle="Montant mensuel moyen déclaré" colorVariant="purple" />
       </div>
 
       {showForm && (

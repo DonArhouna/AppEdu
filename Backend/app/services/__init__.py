@@ -5,6 +5,11 @@ from app.services.deliberation_engine import (
     EtudiantDeliberationResult,
     PromotionDeliberationResult,
 )
+from app.services.academic_service import (
+    class_projections,
+    find_active_inscription,
+    sync_active_inscription,
+)
 
 __all__ = [
     "generate_matricule",
@@ -12,4 +17,7 @@ __all__ = [
     "DeliberationConfig",
     "EtudiantDeliberationResult",
     "PromotionDeliberationResult",
+    "class_projections",
+    "find_active_inscription",
+    "sync_active_inscription",
 ]

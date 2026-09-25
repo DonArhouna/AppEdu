@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -58,6 +59,12 @@ const Utilisateurs = () => {
   useEffect(() => { void loadUsers(); }, []);
 
   const availableRoles = useMemo(() => Array.from(new Set(users.map((user) => user.role))), [users]);
+  const activeAdminCount = useMemo(
+    () => users.filter((user) => user.role === "ADMIN" && user.is_active).length,
+    [users]
+  );
+  const isProtectedAdmin = (user: UserRow) =>
+    user.role === "ADMIN" && user.is_active && activeAdminCount === 1;
   const filteredUsers = useMemo(() => users.filter((user) => {
     const query = search.trim().toLowerCase();
     const matchesSearch = !query || `${user.prenom} ${user.nom} ${user.email}`.toLowerCase().includes(query);
@@ -90,6 +97,11 @@ const Utilisateurs = () => {
 
   const confirmDelete = async () => {
     if (!deleteUser) return;
+    if (isProtectedAdmin(deleteUser)) {
+      toast.error("Le dernier administrateur actif doit être conservé.");
+      setDeleteUser(undefined);
+      return;
+    }
     const result = await usersApi.delete(deleteUser.id);
     if (result.error) {
       toast.error(result.error);
@@ -110,10 +122,10 @@ const Utilisateurs = () => {
       {error && <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Erreur backend</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card><CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm text-muted-foreground">Total</CardTitle><Users className="h-4 w-4 text-primary" /></CardHeader><CardContent className="text-2xl font-bold">{users.length}</CardContent></Card>
-        <Card><CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm text-muted-foreground">Actifs</CardTitle><UserCheck className="h-4 w-4 text-emerald-600" /></CardHeader><CardContent className="text-2xl font-bold text-emerald-600">{users.filter((user) => user.is_active).length}</CardContent></Card>
-        <Card><CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm text-muted-foreground">Inactifs</CardTitle><UserX className="h-4 w-4 text-muted-foreground" /></CardHeader><CardContent className="text-2xl font-bold">{users.filter((user) => !user.is_active).length}</CardContent></Card>
-        <Card><CardHeader className="flex flex-row items-center justify-between pb-2"><CardTitle className="text-sm text-muted-foreground">Administrateurs</CardTitle><ShieldCheck className="h-4 w-4 text-violet-600" /></CardHeader><CardContent className="text-2xl font-bold">{users.filter((user) => user.role === "ADMIN").length}</CardContent></Card>
+        <KpiCard title="Total" value={users.length} icon={Users} subtitle="Comptes enregistrés" colorVariant="primary" />
+        <KpiCard title="Actifs" value={users.filter((user) => user.is_active).length} icon={UserCheck} subtitle="Comptes autorisés" colorVariant="emerald" />
+        <KpiCard title="Inactifs" value={users.filter((user) => !user.is_active).length} icon={UserX} subtitle="Comptes désactivés" colorVariant="rose" />
+        <KpiCard title="Administrateurs" value={users.filter((user) => user.role === "ADMIN").length} icon={ShieldCheck} subtitle="Rôles d'administration" colorVariant="purple" />
       </div>
 
       <Card>
@@ -130,14 +142,14 @@ const Utilisateurs = () => {
                 <TableCell><Badge variant="outline">{roleLabels[user.role] || user.role}</Badge></TableCell>
                 <TableCell><Badge variant={user.is_active ? "default" : "secondary"}>{user.is_active ? "Actif" : "Inactif"}</Badge></TableCell>
                 <TableCell className="text-xs text-muted-foreground">{user.last_login ? new Date(user.last_login).toLocaleString("fr-FR") : "Jamais"}</TableCell>
-                <TableCell className="text-right"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" onClick={() => { setEditingUser(user); setDialogOpen(true); }} aria-label="Modifier"><Users className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => { setEditingUser(user); setDialogOpen(true); }} aria-label="Modifier le mot de passe"><KeyRound className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive" onClick={() => setDeleteUser(user)} aria-label="Supprimer"><Trash2 className="h-4 w-4" /></Button></div></TableCell>
+                <TableCell className="text-right"><div className="flex justify-end gap-1"><Button variant="ghost" size="icon" onClick={() => { setEditingUser(user); setDialogOpen(true); }} aria-label="Modifier"><Users className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => { setEditingUser(user); setDialogOpen(true); }} aria-label="Modifier le mot de passe"><KeyRound className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive" onClick={() => setDeleteUser(user)} aria-label={isProtectedAdmin(user) ? "Dernier administrateur protégé" : "Supprimer"} disabled={isProtectedAdmin(user)} title={isProtectedAdmin(user) ? "Le dernier administrateur actif ne peut pas être supprimé" : undefined}><Trash2 className="h-4 w-4" /></Button></div></TableCell>
               </TableRow>)}</TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
 
-      <UserDialog open={dialogOpen} onOpenChange={setDialogOpen} userToEdit={editingUser} onSave={handleSave} />
+      <UserDialog open={dialogOpen} onOpenChange={setDialogOpen} userToEdit={editingUser} protectAdminAccess={Boolean(editingUser && isProtectedAdmin(editingUser))} onSave={handleSave} />
       <AlertDialog open={Boolean(deleteUser)} onOpenChange={(open) => !open && setDeleteUser(undefined)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Supprimer ce compte ?</AlertDialogTitle><AlertDialogDescription>Le compte {deleteUser?.email} sera supprimé. Cette action est irréversible.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Annuler</AlertDialogCancel><AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground">Supprimer</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </div>
   );

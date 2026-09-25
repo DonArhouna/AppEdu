@@ -100,6 +100,9 @@ export const PaiementPhysiqueModal = ({
   initialMatricule,
 }: PaiementPhysiqueModalProps) => {
   const { user } = useAuth();
+  const canAssignSession = Boolean(
+    user && ["ADMIN", "DIRECTEUR_ETUDES", "SECRETARIAT"].includes(user.role)
+  );
   const [students, setStudents] = useState<StudentRecord[]>([]);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [feeGrids, setFeeGrids] = useState<FeeGrid[]>([]);
@@ -120,7 +123,7 @@ export const PaiementPhysiqueModal = ({
   const loadRegistry = async () => {
     setLoading(true);
     const [studentsResult, sessionsResult, feesResult, statusResult] = await Promise.all([
-      etudiantsApi.getAll(),
+      etudiantsApi.getSummary(),
       sessionsApi.getAll(),
       financesApi.getGrillesTarifaires({ actif: true }),
       setupApi.getStatus(),
@@ -435,28 +438,32 @@ export const PaiementPhysiqueModal = ({
                     <div>
                       <p className="font-semibold text-destructive">Session non renseignée</p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Rattachez l'étudiant à une session avant d'enregistrer un règlement.
+                        {canAssignSession
+                          ? "Rattachez l'étudiant à une session avant d'enregistrer un règlement."
+                          : "Demandez à la scolarité de rattacher l'étudiant à une session avant d'enregistrer un règlement."}
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2 border-t border-destructive/20 pt-3 sm:flex-row">
-                    <Select value={quickAssignSessionId} onValueChange={setQuickAssignSessionId}>
-                      <SelectTrigger className="h-9 bg-background">
-                        <SelectValue placeholder="Choisir une session" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {sessions.map((session) => (
-                          <SelectItem key={session.id} value={session.id}>
-                            {session.nom} ({session.periodes.length} période(s))
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button type="button" variant="outline" onClick={handleAssignSessionNow} disabled={assigning}>
-                      {assigning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Rattacher <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  </div>
+                  {canAssignSession && (
+                    <div className="flex flex-col gap-2 border-t border-destructive/20 pt-3 sm:flex-row">
+                      <Select value={quickAssignSessionId} onValueChange={setQuickAssignSessionId}>
+                        <SelectTrigger className="h-9 bg-background">
+                          <SelectValue placeholder="Choisir une session" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {sessions.map((session) => (
+                            <SelectItem key={session.id} value={session.id}>
+                              {session.nom} ({session.periodes.length} période(s))
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="outline" onClick={handleAssignSessionNow} disabled={assigning}>
+                        {assigning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Rattacher <ArrowRight className="ml-2 h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 

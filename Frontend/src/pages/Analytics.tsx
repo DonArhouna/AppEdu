@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { etudiantsApi, financesApi, pedagogieApi, sessionsApi, structureApi, setupApi, extractErrorMessage } from "@/services/apiClient";
@@ -24,7 +25,7 @@ const Analytics = () => {
     setLoading(true);
     setError(null);
     const results = await Promise.all([
-      etudiantsApi.getAll(), structureApi.getFilieres(), pedagogieApi.getNotes(),
+      etudiantsApi.getSummary(), structureApi.getFilieres(), pedagogieApi.getNotes(),
       financesApi.getPaiements(), financesApi.getFactures(), sessionsApi.getAll(), setupApi.getStatus(),
     ]);
     const firstError = results.find((result) => result.error)?.error;
@@ -60,10 +61,10 @@ const Analytics = () => {
       {error && <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Erreur backend</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
       {loading ? <div className="flex items-center justify-center gap-2 p-16 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Calcul des indicateurs...</div> : <>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Étudiants</CardTitle><Users className="h-4 w-4 text-primary" /></CardHeader><CardContent><p className="text-2xl font-bold">{students.length}</p><p className="text-xs text-muted-foreground">Dossiers enregistrés</p></CardContent></Card>
-          <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Filières</CardTitle><GraduationCap className="h-4 w-4 text-emerald-600" /></CardHeader><CardContent><p className="text-2xl font-bold">{filieres.length}</p><p className="text-xs text-muted-foreground">Référentiel actuel</p></CardContent></Card>
-          <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Encaissé</CardTitle><DollarSign className="h-4 w-4 text-amber-600" /></CardHeader><CardContent><p className="text-2xl font-bold">{totalPaid.toLocaleString("fr-FR")} {currencyLabel}</p><p className="text-xs text-muted-foreground">{payments.length} paiement(s)</p></CardContent></Card>
-          <Card><CardHeader><CardTitle className="text-sm text-muted-foreground">Moyenne des notes</CardTitle><BarChart3 className="h-4 w-4 text-violet-600" /></CardHeader><CardContent><p className="text-2xl font-bold">{averageNote ? `${averageNote.toFixed(2)}/20` : "—"}</p><p className="text-xs text-muted-foreground">{notes.length} note(s)</p></CardContent></Card>
+          <KpiCard title="Étudiants" value={students.length} icon={Users} subtitle="Dossiers enregistrés" colorVariant="primary" />
+          <KpiCard title="Filières" value={filieres.length} icon={GraduationCap} subtitle="Référentiel actuel" colorVariant="emerald" />
+          <KpiCard title="Encaissé" value={`${totalPaid.toLocaleString("fr-FR")} ${currencyLabel}`} icon={DollarSign} subtitle={`${payments.length} paiement(s)`} colorVariant="amber" />
+          <KpiCard title="Moyenne des notes" value={averageNote ? `${averageNote.toFixed(2)}/20` : "—"} icon={BarChart3} subtitle={`${notes.length} note(s)`} colorVariant="purple" />
         </div>
         <div className="grid gap-6 lg:grid-cols-2">
           <Card><CardHeader><CardTitle>Répartition des étudiants par filière</CardTitle><CardDescription>Calculée depuis les dossiers étudiants.</CardDescription></CardHeader><CardContent className="space-y-4">{filiereDistribution.length === 0 ? <p className="text-sm text-muted-foreground">Aucun étudiant enregistré.</p> : filiereDistribution.map((item) => <div key={item.name}><div className="mb-1 flex justify-between text-sm"><span>{item.name}</span><span className="font-mono">{item.value}</span></div><Progress value={students.length ? (item.value / students.length) * 100 : 0} /></div>)}</CardContent></Card>

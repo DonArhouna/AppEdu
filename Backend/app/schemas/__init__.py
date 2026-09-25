@@ -1,4 +1,5 @@
 from app.schemas.user import UserBase, UserCreate, UserUpdate, UserResponse
+from app.schemas.audit import AuditEventResponse
 from app.schemas.auth import LoginRequest, TokenResponse, TokenPayload
 from app.schemas.setup import (
     SetupStatusResponse,
@@ -17,6 +18,15 @@ from app.schemas.session import (
     SessionAcademiqueUpdate,
     SessionAcademiqueResponse,
 )
+from app.schemas.academic import (
+    CycleBase, CycleCreate, CycleUpdate, CycleSummary, CycleResponse,
+    NiveauBase, NiveauCreate, NiveauUpdate, NiveauSummary, NiveauResponse,
+    FiliereSummary, FiliereResume, NiveauResume, CycleResume,
+    ClasseBase, ClasseCreate, ClasseUpdate, ClasseResponse,
+    EtudiantInscriptionSummary, InscriptionSummary, InscriptionBase,
+    InscriptionCreate, InscriptionUpdate, InscriptionResponse,
+    ModeleLMDChargeRequest, ModeleLMDChargeResponse,
+)
 from app.schemas.structure import (
     CampusBase, CampusCreate, CampusUpdate, CampusResponse,
     DepartementBase, DepartementCreate, DepartementUpdate, DepartementResponse,
@@ -25,7 +35,8 @@ from app.schemas.structure import (
     MatiereBase, MatiereCreate, MatiereUpdate, MatiereResponse,
 )
 from app.schemas.etudiant import (
-    EtudiantBase, EtudiantCreate, EtudiantUpdate, EtudiantInscriptionRequest, EtudiantResponse,
+    EtudiantBase, EtudiantCreate, EtudiantUpdate, EtudiantInscriptionRequest,
+    EtudiantSummaryResponse, EtudiantResponse,
 )
 from app.schemas.pedagogie import (
     CoursBase, CoursCreate, CoursResponse,
@@ -51,20 +62,37 @@ from app.schemas.admissions import (
     ActionGroupee, BulkCandidatureAction, BulkActionError, BulkCandidatureActionResponse,
 )
 from app.schemas.context import AcademicContextUpdate, AcademicContextResponse
+from app.schemas.rbac import (
+    CurrentUserResponse,
+    EffectivePermissionsResponse,
+    PermissionCreate, PermissionResponse, PermissionUpdate,
+    RbacUserResponse,
+    RoleCreate, RolePermissionAdd, RolePermissionsSet, RoleResponse, RoleUpdate,
+    RoleUsersAssign, RoleUsersResponse, UserRoleAssignmentResponse,
+)
 
 __all__ = [
     "UserBase", "UserCreate", "UserUpdate", "UserResponse",
+    "AuditEventResponse",
     "LoginRequest", "TokenResponse", "TokenPayload",
     "SetupStatusResponse", "SetupInitRequest", "SetupInitResponse",
     "EtablissementSetupInput", "AdminSetupInput", "DatabaseSetupInput",
     "PeriodePaiementBase", "PeriodePaiementCreate", "PeriodePaiementResponse",
     "SessionAcademiqueBase", "SessionAcademiqueCreate", "SessionAcademiqueUpdate", "SessionAcademiqueResponse",
+    "CycleBase", "CycleCreate", "CycleUpdate", "CycleSummary", "CycleResponse",
+    "NiveauBase", "NiveauCreate", "NiveauUpdate", "NiveauSummary", "NiveauResponse",
+    "FiliereSummary", "FiliereResume", "NiveauResume", "CycleResume",
+    "ClasseBase", "ClasseCreate", "ClasseUpdate", "ClasseResponse",
+    "EtudiantInscriptionSummary", "InscriptionSummary", "InscriptionBase",
+    "InscriptionCreate", "InscriptionUpdate", "InscriptionResponse",
+    "ModeleLMDChargeRequest", "ModeleLMDChargeResponse",
     "CampusBase", "CampusCreate", "CampusUpdate", "CampusResponse",
     "DepartementBase", "DepartementCreate", "DepartementUpdate", "DepartementResponse",
     "FiliereBase", "FiliereCreate", "FiliereUpdate", "FiliereResponse",
     "UEBase", "UECreate", "UEUpdate", "UEResponse",
     "MatiereBase", "MatiereCreate", "MatiereUpdate", "MatiereResponse",
-    "EtudiantBase", "EtudiantCreate", "EtudiantUpdate", "EtudiantInscriptionRequest", "EtudiantResponse",
+    "EtudiantBase", "EtudiantCreate", "EtudiantUpdate", "EtudiantInscriptionRequest",
+    "EtudiantSummaryResponse", "EtudiantResponse",
     "CoursBase", "CoursCreate", "CoursResponse",
     "ExamenBase", "ExamenCreate", "ExamenResponse",
     "NoteBase", "NoteCreate", "NoteBulkCreate", "NoteBulkItem", "NoteResponse",
@@ -83,4 +111,9 @@ __all__ = [
     "VueAdmissionsFiltres", "VueAdmissionsCreate", "VueAdmissionsUpdate", "VueAdmissionsResponse",
     "ActionGroupee", "BulkCandidatureAction", "BulkActionError", "BulkCandidatureActionResponse",
     "AcademicContextUpdate", "AcademicContextResponse",
+    "CurrentUserResponse", "EffectivePermissionsResponse",
+    "PermissionCreate", "PermissionResponse", "PermissionUpdate",
+    "RbacUserResponse",
+    "RoleCreate", "RolePermissionAdd", "RolePermissionsSet", "RoleResponse", "RoleUpdate",
+    "RoleUsersAssign", "RoleUsersResponse", "UserRoleAssignmentResponse",
 ]

@@ -5,7 +5,7 @@ Modèle Utilisateur : Gestion des comptes, authentification et rôles RBAC.
 from enum import Enum
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Boolean, DateTime, Integer, ForeignKey
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Index, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
 
@@ -27,6 +27,9 @@ class UserStatus(str, Enum):
 
 class Utilisateur(Base, TimestampMixin):
     __tablename__ = "utilisateurs"
+    __table_args__ = (
+        Index("uq_utilisateurs_etudiant_id", "etudiant_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     
@@ -44,7 +47,6 @@ class Utilisateur(Base, TimestampMixin):
         String(50),
         ForeignKey("etudiants.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
     
     # Rôle RBAC : ADMIN | DIRECTEUR_ETUDES | SECRETARIAT | COMPTABILITE | ENSEIGNANT | ETUDIANT

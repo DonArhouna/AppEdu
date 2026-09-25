@@ -81,23 +81,203 @@ export interface AcademicContext {
   updated_at: string;
 }
 
-export interface Student {
+export interface StudentSummary {
   id: string;
   matricule: string;
   nom: string;
   prenom: string;
-  sexe?: string | null;
-  email?: string | null;
-  telephone?: string | null;
   filiere: string;
   filiere_id?: string | null;
+  classe_id?: string | null;
   niveau: string;
   statut: string;
   session_id?: string | null;
+}
+
+export interface Student extends StudentSummary {
+  sexe?: string | null;
+  email?: string | null;
+  telephone?: string | null;
   date_naissance?: string | null;
   adresse?: string | null;
   lieu_naissance?: string | null;
   credits_valides?: number | null;
+}
+
+export interface RbacPermission {
+  id: number;
+  code: string;
+  domaine: string;
+  action: string;
+  libelle: string;
+  description?: string | null;
+  systeme: boolean;
+  actif: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RbacRole {
+  id: number;
+  code: string;
+  libelle: string;
+  description?: string | null;
+  ordre: number;
+  systeme: boolean;
+  actif: boolean;
+  permissions: string[];
+  utilisateurs: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RbacUserAccess {
+  id: number;
+  email: string;
+  nom: string;
+  prenom: string;
+  role: string;
+  is_active: boolean;
+  roles: string[];
+  role_labels: string[];
+  permissions: string[];
+  authz_version?: string | null;
+}
+
+export interface RbacUserPermissions {
+  user_id: number;
+  role: string;
+  legacy_role_is_admin: boolean;
+  roles: string[];
+  role_labels: string[];
+  permissions: string[];
+  permission_domains: string[];
+  authz_version?: string | null;
+}
+
+export type ImportMode = "creation" | "mise_a_jour";
+export type ImportLigneStatut = "valide" | "erreur" | "ignore";
+export type ImportAction = "creer" | "mettre_a_jour" | "aucune";
+
+export interface ImportColonne {
+  source: string;
+  cible: string;
+}
+
+export interface ImportAnalyseLigne {
+  ligne: number;
+  statut: ImportLigneStatut;
+  action: ImportAction;
+  matricule?: string | null;
+  nom?: string | null;
+  prenom?: string | null;
+  filiere?: string | null;
+  niveau?: string | null;
+  email?: string | null;
+  erreurs: string[];
+  avertissements: string[];
+}
+
+export interface ImportAnalyse {
+  batch_id: string;
+  nom_fichier: string;
+  format_source: string;
+  statut: string;
+  mode: ImportMode;
+  nb_lignes: number;
+  nb_creer: number;
+  nb_mettre_a_jour: number;
+  nb_erreurs: number;
+  nb_avertissements: number;
+  nb_ignorees: number;
+  colonnes_reconnues: ImportColonne[];
+  colonnes_ignorees: string[];
+  champs_obligatoires_manquants: string[];
+  lignes: ImportAnalyseLigne[];
+  message?: string | null;
+}
+
+export interface ImportLigneResultat {
+  ligne: number;
+  statut: string;
+  action: string;
+  matricule?: string | null;
+  etudiant_id?: string | null;
+  erreurs: string[];
+}
+
+export interface ImportValidation {
+  batch_id: string;
+  statut: string;
+  nb_importes: number;
+  nb_mises_a_jour: number;
+  nb_erreurs: number;
+  nb_ignorees: number;
+  lignes: ImportLigneResultat[];
+  message?: string | null;
+}
+
+export interface ImportBatch {
+  id: string;
+  nom_fichier: string;
+  format_source: string;
+  statut: string;
+  mode: string;
+  nb_lignes: number;
+  nb_creer: number;
+  nb_mettre_a_jour: number;
+  nb_erreurs: number;
+  nb_avertissements: number;
+  nb_importes: number;
+  nb_ignorees: number;
+  colonnes: Record<string, unknown>;
+  message?: string | null;
+  cree_par_id?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  rows?: ImportRow[];
+}
+
+export interface ImportRow {
+  id: number;
+  ligne: number;
+  statut: string;
+  action: string;
+  matricule?: string | null;
+  etudiant_id?: string | null;
+  erreurs: string[];
+  avertissements: string[];
+  donnees: Record<string, unknown>;
+}
+
+export interface ImportColonneModele {
+  colonne: string;
+  champ: string;
+  obligatoire: boolean;
+  description: string;
+  exemples: string[];
+}
+
+export interface ImportModele {
+  nom_fichier_suggere: string;
+  formats_acceptes: string[];
+  encodage: string;
+  separateurs_csv: string[];
+  colonnes: ImportColonneModele[];
+  notes: string[];
+}
+
+export interface AuditEvent {
+  id: string;
+  occurred_at: string;
+  actor_id?: number | null;
+  actor_email?: string | null;
+  action: string;
+  resource_type: string;
+  resource_id?: string | null;
+  outcome: string;
+  reason?: string | null;
+  details: Record<string, unknown>;
 }
 
 export interface User {
@@ -149,6 +329,98 @@ export interface Filiere {
   departement_id?: string | null;
   departement?: Department;
   unites_enseignement?: TeachingUnit[];
+}
+
+export interface AcademicCycle {
+  id: string;
+  code: string;
+  nom: string;
+  libelle: string;
+  description?: string | null;
+  ordre: number;
+  rang: number;
+  actif: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AcademicLevel {
+  id: string;
+  code: string;
+  nom: string;
+  libelle: string;
+  cycle_id: string;
+  description?: string | null;
+  ordre: number;
+  rang: number;
+  actif: boolean;
+  created_at: string;
+  updated_at: string;
+  cycle?: AcademicCycle | null;
+}
+
+export interface AcademicClass {
+  id: string;
+  code: string;
+  nom?: string | null;
+  libelle: string;
+  filiere_id: string;
+  niveau_id: string;
+  cycle_id?: string | null;
+  actif: boolean;
+  created_at: string;
+  updated_at: string;
+  filiere?: Filiere | null;
+  niveau?: AcademicLevel | null;
+  cycle?: AcademicCycle | null;
+}
+
+export interface AcademicCycleInput {
+  code: string;
+  nom: string;
+  description?: string | null;
+  ordre: number;
+  actif: boolean;
+}
+
+export interface AcademicLevelInput {
+  code: string;
+  nom: string;
+  cycle_id: string;
+  description?: string | null;
+  ordre: number;
+  actif: boolean;
+}
+
+export interface AcademicClassInput {
+  nom: string;
+  filiere_id: string;
+  niveau_id: string;
+  actif: boolean;
+}
+
+export interface AcademicTemplateResult {
+  cycles: AcademicCycle[];
+  niveaux: AcademicLevel[];
+  cycles_crees: number;
+  niveaux_crees: number;
+  total_cycles: number;
+  total_niveaux: number;
+  created: boolean;
+  idempotent: boolean;
+}
+
+export interface Enrollment {
+  id: string;
+  etudiant_id: string;
+  classe_id: string;
+  session_id: string;
+  statut: string;
+  actif: boolean;
+  date_inscription: string;
+  created_at: string;
+  updated_at: string;
+  classe?: AcademicClass | null;
 }
 
 export interface TeachingUnit {
@@ -384,6 +656,8 @@ export interface Candidature {
   telephone?: string | null;
   adresse?: string | null;
   filiere_id: string;
+  niveau_id?: string | null;
+  classe_id?: string | null;
   niveau: string;
   session_id?: string | null;
   statut: CandidatureStatus;
@@ -409,6 +683,8 @@ export interface CandidatureCreatePayload {
   telephone?: string;
   adresse?: string;
   filiere_id: string;
+  niveau_id?: string;
+  classe_id?: string;
   niveau: string;
   session_id?: string;
   notes?: string;
@@ -424,6 +700,8 @@ export interface CandidatureUpdatePayload {
   telephone?: string | null;
   adresse?: string | null;
   filiere_id?: string;
+  niveau_id?: string | null;
+  classe_id?: string | null;
   niveau?: string;
   session_id?: string | null;
   notes?: string | null;

@@ -5,11 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import (
-    get_current_active_user,
-    get_db,
-    require_academic_context,
-)
+from app.api.deps import get_current_active_user, get_db, require_academic_write
 from app.models.etablissement import Etablissement
 from app.models.session_academique import SessionAcademique
 from app.models.utilisateur import Utilisateur
@@ -96,7 +92,7 @@ async def get_academic_context(
 async def update_academic_context(
     payload: AcademicContextUpdate,
     db: AsyncSession = Depends(get_db),
-    _auth: Utilisateur = Depends(require_academic_context),
+    _auth: Utilisateur = Depends(require_academic_write),
 ):
     etablissement = await _get_etablissement(db)
     session = await _get_session(db, payload.session_id)

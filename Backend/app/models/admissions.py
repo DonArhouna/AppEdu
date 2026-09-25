@@ -34,6 +34,21 @@ class Candidature(Base, TimestampMixin):
         String(50), ForeignKey("filieres.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     niveau: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Références normalisées, ajoutées sans modifier les projections texte
+    # historiques.  Elles restent optionnelles pour ne pas inventer de
+    # correspondance pour les anciennes candidatures.
+    niveau_id: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        ForeignKey("niveaux.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    classe_id: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        ForeignKey("classes.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     session_id: Mapped[Optional[str]] = mapped_column(
         String(50), ForeignKey("sessions_academiques.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -52,6 +67,16 @@ class Candidature(Base, TimestampMixin):
     )
 
     filiere: Mapped["Filiere"] = relationship("Filiere", lazy="selectin")
+    niveau_obj: Mapped[Optional["Niveau"]] = relationship(
+        "Niveau",
+        foreign_keys=[niveau_id],
+        lazy="selectin",
+    )
+    classe: Mapped[Optional["Classe"]] = relationship(
+        "Classe",
+        foreign_keys=[classe_id],
+        lazy="selectin",
+    )
     session: Mapped[Optional["SessionAcademique"]] = relationship(
         "SessionAcademique", lazy="selectin"
     )

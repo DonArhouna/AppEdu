@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -175,66 +176,10 @@ const FactureDetail = () => {
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Montant Total</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">
-              {montantTotal.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Échéance définie</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Montant Encaissé</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-              {montantPaye.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {montantTotal > 0 ? Math.round((montantPaye / montantTotal) * 100) : 0}% réglé
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Reste à Payer</CardTitle>
-            <CreditCard className="h-4 w-4 text-amber-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
-              {resteAPayer.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Solde débiteur</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Date d'Échéance</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold text-foreground">
-              {facture.date_echeance
-                ? new Date(facture.date_echeance).toLocaleDateString("fr-FR")
-                : "Non fixée"}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Émise le{" "}
-              {facture.date_emission
-                ? new Date(facture.date_emission).toLocaleDateString("fr-FR")
-                : "-"}
-            </p>
-          </CardContent>
-        </Card>
+        <KpiCard title="Montant total" value={`${montantTotal.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`} icon={FileText} subtitle="Échéance définie" colorVariant="primary" />
+        <KpiCard title="Montant encaissé" value={`${montantPaye.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`} icon={CheckCircle2} subtitle={`${montantTotal > 0 ? Math.round((montantPaye / montantTotal) * 100) : 0}% réglé`} colorVariant="emerald" />
+        <KpiCard title="Reste à payer" value={`${resteAPayer.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`} icon={CreditCard} subtitle="Solde débiteur" colorVariant="amber" />
+        <KpiCard title="Date d'échéance" value={facture.date_echeance ? new Date(facture.date_echeance).toLocaleDateString("fr-FR") : "Non fixée"} icon={Calendar} subtitle={facture.date_emission ? `Émise le ${new Date(facture.date_emission).toLocaleDateString("fr-FR")}` : "Émission non renseignée"} colorVariant="sky" />
       </div>
 
       {/* Tabs */}

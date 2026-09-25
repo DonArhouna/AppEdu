@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -97,7 +98,7 @@ export const SessionsConfig = () => {
     setLoading(true);
     const [sessionsResult, studentsResult] = await Promise.all([
       sessionsApi.getAll(),
-      etudiantsApi.getAll(),
+      etudiantsApi.getSummary(),
     ]);
     if (sessionsResult.error || studentsResult.error || !sessionsResult.data) {
       toast.error(
@@ -296,42 +297,10 @@ export const SessionsConfig = () => {
       </div>
 
       {/* ── Top Summary KPIs ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="rounded-2xl border-border/70 shadow-xs">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sessions Actives</p>
-              <p className="text-2xl font-bold text-foreground mt-1">{totalActiveSessions} / {sessions.length}</p>
-            </div>
-            <div className="h-10 w-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-              <CheckCircle2 className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border-border/70 shadow-xs">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Étudiants Rattachés</p>
-              <p className="text-2xl font-bold text-foreground mt-1">{totalStudents}</p>
-            </div>
-            <div className="h-10 w-10 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
-              <Users className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border-border/70 shadow-xs">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Périodes Financières</p>
-              <p className="text-2xl font-bold text-foreground mt-1">{totalPeriods} tranches</p>
-            </div>
-            <div className="h-10 w-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
-              <CreditCard className="h-5 w-5" />
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <KpiCard title="Sessions actives" value={`${totalActiveSessions} / ${sessions.length}`} icon={CheckCircle2} subtitle="Calendriers actifs" colorVariant="emerald" />
+        <KpiCard title="Étudiants rattachés" value={totalStudents} icon={Users} subtitle="Dossiers liés à une session" colorVariant="sky" />
+        <KpiCard title="Périodes financières" value={`${totalPeriods} tranches`} icon={CreditCard} subtitle="Échéanciers configurés" colorVariant="amber" />
       </div>
 
       {/* ── Sessions List Cards ── */}

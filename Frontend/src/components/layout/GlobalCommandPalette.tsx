@@ -37,7 +37,7 @@ export const GlobalCommandPalette = ({
     [externalOnOpenChange, isControlled]
   );
 
-  const canSearchDirectory = hasAccess(["ADMIN", "DIRECTEUR_ETUDES", "SECRETARIAT", "COMPTABILITE"]);
+  const canSearchDirectory = hasAccess(["ADMIN", "DIRECTEUR_ETUDES", "SECRETARIAT"]);
   const canManageStudents = hasAccess(["ADMIN", "DIRECTEUR_ETUDES", "SECRETARIAT"]);
   const canManagePayments = hasAccess(["ADMIN", "COMPTABILITE"]);
   const canManageSessions = hasAccess(["ADMIN", "DIRECTEUR_ETUDES", "COMPTABILITE"]);

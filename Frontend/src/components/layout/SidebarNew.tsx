@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -6,8 +6,8 @@ import {
   BookOpen, Building2, MapPin, UserCog, BookMarked,
   CalendarDays, FileText, ClipboardCheck, ChevronDown,
   DollarSign, CreditCard, TrendingUp, BarChart3, School,
-  Briefcase, Wallet, UserCircle, Settings, Search, X, Sliders,
-  ShieldCheck, Sparkles, Layers, ChevronLeft, ChevronRight,
+  Briefcase, Wallet, UserCircle, Settings, Search, X, Sliders, Upload,
+  ShieldCheck, Sparkles, Layers, BookOpenCheck, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import logo from "@/assets/logo.svg";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ export interface MenuItem {
   badgeVariant?: "default" | "secondary" | "destructive" | "outline" | "warning";
   description?: string;
   allowedRoles?: UserRole[];
+  requiredPermission?: string;
 }
 
 export interface NavigationSection {
@@ -45,6 +46,7 @@ export interface NavigationSection {
   colorClass: string;
   bgLightClass: string;
   allowedRoles?: UserRole[];
+  requiredPermission?: string;
   items: MenuItem[];
 }
 
@@ -57,13 +59,14 @@ export const navigationSections: NavigationSection[] = [
     bgLightClass: "bg-blue-500/10",
     allowedRoles: ["ADMIN", "DIRECTEUR_ETUDES"],
     items: [
-      { title: "Campus", icon: MapPin, href: "/campus", description: "Gestion multi-campus et implantations" },
-      { title: "Départements", icon: Building2, href: "/departements", description: "Unités académiques et facultés" },
-      { title: "Filières & Cursus", icon: BookOpen, href: "/filieres", description: "Programmes de formation et diplômes" },
-      { title: "Promotions & Cohortes", icon: GraduationCap, href: "/promotions", description: "Sessions et années d'études" },
-      { title: "Sessions Académiques", icon: CalendarDays, href: "/sessions", description: "Sessions et périodes de paiement" },
-      { title: "Unités d'Ens. (UE)", icon: Layers, href: "/ue", description: "Unités d'enseignement et crédits ECTS" },
-      { title: "Matières (ECUE)", icon: BookMarked, href: "/matieres", description: "Modules, coefficients et volumes horaires" },
+      { title: "Campus", icon: MapPin, href: "/campus", description: "Gestion multi-campus et implantations" , requiredPermission: "academic.read" },
+      { title: "Départements", icon: Building2, href: "/departements", description: "Unités académiques et facultés" , requiredPermission: "academic.read" },
+      { title: "Filières & Cursus", icon: BookOpen, href: "/filieres", description: "Programmes de formation et diplômes" , requiredPermission: "academic.read" },
+      { title: "Cycles, Niveaux & Classes", icon: BookOpenCheck, href: "/academic-structure", description: "Taxonomie LMD et classes par filière" , requiredPermission: "academic.read" },
+      { title: "Promotions & Cohortes", icon: GraduationCap, href: "/promotions", description: "Sessions et années d'études" , requiredPermission: "academic.read" },
+      { title: "Sessions Académiques", icon: CalendarDays, href: "/sessions", description: "Sessions et périodes de paiement" , requiredPermission: "academic.read" },
+      { title: "Unités d'Ens. (UE)", icon: Layers, href: "/ue", description: "Unités d'enseignement et crédits ECTS" , requiredPermission: "academic.read" },
+      { title: "Matières (ECUE)", icon: BookMarked, href: "/matieres", description: "Modules, coefficients et volumes horaires" , requiredPermission: "academic.read" },
     ],
   },
   {
@@ -74,9 +77,10 @@ export const navigationSections: NavigationSection[] = [
     bgLightClass: "bg-sky-500/10",
     allowedRoles: ["ADMIN", "SECRETARIAT", "DIRECTEUR_ETUDES"],
     items: [
-      { title: "Pré-inscriptions", icon: UserPlus, href: "/pre-inscription", description: "Candidatures persistées et suivi des dossiers" },
-      { title: "Validation dossiers", icon: FileCheck, href: "/validation", description: "Pièces, décisions et conversion étudiants" },
-      { title: "Registre Étudiants", icon: Users, href: "/etudiants", description: "Dossiers scolaires et fiches individuelles" },
+      { title: "Pré-inscriptions", icon: UserPlus, href: "/pre-inscription", description: "Candidatures persistées et suivi des dossiers" , requiredPermission: "admissions.read" },
+      { title: "Validation dossiers", icon: FileCheck, href: "/validation", description: "Pièces, décisions et conversion étudiants" , requiredPermission: "admissions.read" },
+      { title: "Registre Étudiants", icon: Users, href: "/etudiants", description: "Dossiers scolaires et fiches individuelles" , requiredPermission: "students.read" },
+      { title: "Import d'étudiants", icon: Upload, href: "/etudiants/import", description: "Chargement Excel en deux temps avec rapport", allowedRoles: ["ADMIN", "DIRECTEUR_ETUDES", "SECRETARIAT"], requiredPermission: "students.write" },
     ],
   },
   {
@@ -87,21 +91,21 @@ export const navigationSections: NavigationSection[] = [
     bgLightClass: "bg-emerald-500/10",
     allowedRoles: ["ADMIN", "DIRECTEUR_ETUDES", "ENSEIGNANT"],
     items: [
-      { title: "Emplois du Temps", icon: CalendarDays, href: "/emplois-du-temps", description: "Plannings hebdomadaires et réservations" },
-      { title: "Carnet de Notes", icon: FileText, href: "/notes", description: "Saisie des notes, CC et examens" },
-      { title: "Suivi des Absences", icon: ClipboardCheck, href: "/absences", description: "Appels de classe et assiduité" },
+      { title: "Emplois du Temps", icon: CalendarDays, href: "/emplois-du-temps", description: "Plannings hebdomadaires et réservations" , requiredPermission: "pedagogy.read" },
+      { title: "Carnet de Notes", icon: FileText, href: "/notes", description: "Saisie des notes, CC et examens" , requiredPermission: "pedagogy.read" },
+      { title: "Suivi des Absences", icon: ClipboardCheck, href: "/absences", description: "Appels de classe et assiduité" , requiredPermission: "pedagogy.read" },
     ],
   },
   {
     id: "personnel",
-    title: "Corps Enseignant & RH",
+    title: "Annuaire du personnel",
     icon: Briefcase,
     colorClass: "text-violet-500",
     bgLightClass: "bg-violet-500/10",
     allowedRoles: ["ADMIN", "SECRETARIAT", "ENSEIGNANT"],
     items: [
-      { title: "Enseignants", icon: GraduationCap, href: "/enseignants", description: "Corps professoral, vacataires et titulaires", allowedRoles: ["ADMIN", "SECRETARIAT"] },
-      { title: "Personnel & RH", icon: UserCog, href: "/personnel", description: "Personnel administratif et technique", allowedRoles: ["ADMIN", "SECRETARIAT"] },
+      { title: "Enseignants", icon: GraduationCap, href: "/enseignants", description: "Corps professoral, vacataires et titulaires", allowedRoles: ["ADMIN", "SECRETARIAT"] , requiredPermission: "users.manage" },
+      { title: "Personnel", icon: UserCog, href: "/personnel", description: "Comptes du personnel administratif et technique", allowedRoles: ["ADMIN", "SECRETARIAT"] , requiredPermission: "users.manage" },
       { title: "Portail Enseignant", icon: GraduationCap, href: "/portail-enseignant", description: "Espace réservé aux professeurs", allowedRoles: ["ENSEIGNANT"] },
     ],
   },
@@ -113,10 +117,10 @@ export const navigationSections: NavigationSection[] = [
     bgLightClass: "bg-amber-500/10",
     allowedRoles: ["ADMIN", "COMPTABILITE"],
     items: [
-      { title: "Frais de Scolarité", icon: DollarSign, href: "/frais-scolarite", description: "Grilles tarifaires, bourses et remises" },
-      { title: "Factures", icon: FileText, href: "/factures", description: "Échéanciers et factures émises" },
-      { title: "Paiements", icon: CreditCard, href: "/paiements", description: "Encaissements, virements et mobile money" },
-      { title: "Reporting Financier", icon: TrendingUp, href: "/reporting-financier", description: "Balance âgée, trésorerie et bilans" },
+      { title: "Frais de Scolarité", icon: DollarSign, href: "/frais-scolarite", description: "Grilles tarifaires, bourses et remises" , requiredPermission: "finance.read" },
+      { title: "Factures", icon: FileText, href: "/factures", description: "Échéanciers et factures émises" , requiredPermission: "finance.read" },
+      { title: "Paiements", icon: CreditCard, href: "/paiements", description: "Encaissements, virements et mobile money" , requiredPermission: "finance.read" },
+      { title: "Reporting Financier", icon: TrendingUp, href: "/reporting-financier", description: "Balance âgée, trésorerie et bilans" , requiredPermission: "finance.read" },
     ],
   },
   {
@@ -148,10 +152,11 @@ export const navigationSections: NavigationSection[] = [
     colorClass: "text-rose-500",
     bgLightClass: "bg-rose-500/10",
     allowedRoles: ["ADMIN"],
+    requiredPermission: "roles.manage",
     items: [
-      { title: "Comptes Utilisateurs", icon: Users, href: "/utilisateurs", description: "Accès au système et annuaire" },
-      { title: "Rôles & Permissions", icon: ShieldCheck, href: "/roles-permissions", description: "Matrice de sécurité RBAC" },
-      { title: "Paramétrage Général", icon: Sliders, href: "/parametrage", description: "Configuration de l'établissement" },
+      { title: "Comptes Utilisateurs", icon: Users, href: "/utilisateurs", description: "Accès au système et annuaire", requiredPermission: "users.manage" },
+      { title: "Rôles & Permissions", icon: ShieldCheck, href: "/roles-permissions", description: "Matrice de sécurité RBAC", requiredPermission: "roles.manage" },
+      { title: "Paramétrage Général", icon: Sliders, href: "/parametrage", description: "Configuration de l'établissement", allowedRoles: ["ADMIN"] },
     ],
   },
 ];
@@ -175,18 +180,44 @@ export const Sidebar = ({
 }: SidebarProps) => {
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
-  const { hasAccess, currentRoleInfo } = useRBAC();
+  const { hasAccess, hasPermission, currentRoleInfo } = useRBAC();
 
-  // Filter sections by active user role permissions
+  /**
+   * Un module est visible si le rôle historique ET la permission serveur
+   * l'autorisent tous les deux (sémantique AND, cf. `ProtectedRoute`).
+   *
+   * `hasPermission` s'appuie sur `permissions_effectives` calculé par le
+   * backend : la navigation affiche donc exactement ce que l'API accorde,
+   * sans matrice locale. La conjonction évite par ailleurs d'élargir un
+   * accès plus étroit que la fenêtre de la permission.
+   */
+  const canSee = useCallback(
+    (entry: { allowedRoles?: UserRole[]; requiredPermission?: string }): boolean => {
+      const roleOk = hasAccess(entry.allowedRoles);
+      const permissionOk = entry.requiredPermission
+        ? hasPermission(entry.requiredPermission)
+        : true;
+      return roleOk && permissionOk;
+    },
+    [hasAccess, hasPermission]
+  );
+
   const accessibleSections = useMemo(() => {
     return navigationSections
-      .filter((section) => hasAccess(section.allowedRoles))
       .map((section) => ({
         ...section,
-        items: section.items.filter((item) => hasAccess(item.allowedRoles)),
+        items: section.items.filter(canSee),
       }))
-      .filter((section) => section.items.length > 0);
-  }, [hasAccess]);
+      .filter(
+        (section) =>
+          section.items.length > 0 &&
+          (!section.allowedRoles ||
+            hasAccess(section.allowedRoles) ||
+            (section.requiredPermission
+              ? hasPermission(section.requiredPermission)
+              : false))
+      );
+  }, [canSee, hasAccess, hasPermission]);
 
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};

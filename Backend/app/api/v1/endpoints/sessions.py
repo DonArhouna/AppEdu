@@ -15,9 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_db, require_admin, require_staff
+from app.api.deps import get_db, require_academic_read, require_academic_structure_write
 from app.models.session_academique import SessionAcademique, PeriodePaiement
 from app.models.etudiant import Etudiant
+from app.models.academic import Inscription
 from app.schemas.session import (
     SessionAcademiqueCreate,
     SessionAcademiqueUpdate,
@@ -31,7 +32,7 @@ router = APIRouter()
 @router.get("/", response_model=List[SessionAcademiqueResponse], summary="Lister toutes les sessions académiques")
 async def list_sessions(
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     """Retourne la liste de toutes les sessions académiques avec leurs périodes ordonnées."""
     stmt = (
@@ -47,7 +48,7 @@ async def list_sessions(
 @router.get("/active", response_model=SessionAcademiqueResponse, summary="Obtenir la session active")
 async def get_active_session(
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     """Retourne la session académique actuellement active avec son calendrier de paiement."""
     stmt = (
@@ -71,7 +72,7 @@ async def get_active_session(
 async def get_session_by_id(
     session_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     """Retourne une session académique spécifique par son identifiant."""
     stmt = (
@@ -94,7 +95,7 @@ async def get_session_by_id(
 async def get_session_periods(
     session_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     """Retourne les périodes de paiement rattachées à la session."""
     stmt = (
@@ -111,7 +112,7 @@ async def get_session_periods(
 async def create_session(
     payload: SessionAcademiqueCreate,
     db: AsyncSession = Depends(get_db),
-    _admin = Depends(require_admin)
+    _admin = Depends(require_academic_structure_write)
 ):
     """Crée une nouvelle session académique avec ses périodes de paiement (Réservé ADMIN)."""
     # Vérifier l'unicité du code
@@ -173,7 +174,7 @@ async def update_session(
     session_id: str,
     payload: SessionAcademiqueUpdate,
     db: AsyncSession = Depends(get_db),
-    _admin=Depends(require_admin),
+    _admin=Depends(require_academic_structure_write),
 ):
     session = await db.get(SessionAcademique, session_id)
     if not session:
@@ -242,7 +243,7 @@ async def update_session(
 async def delete_session(
     session_id: str,
     db: AsyncSession = Depends(get_db),
-    _admin=Depends(require_admin),
+    _admin=Depends(require_academic_structure_write),
 ):
     session = await db.get(SessionAcademique, session_id)
     if not session:
@@ -258,6 +259,14 @@ async def delete_session(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Des étudiants sont encore rattachés à cette session.",
+        )
+    attached_inscription = await db.execute(
+        select(Inscription.id).where(Inscription.session_id == session_id).limit(1)
+    )
+    if attached_inscription.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Des inscriptions sont encore rattachées à cette session.",
         )
 
     await db.delete(session)

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -108,49 +109,10 @@ const UEDetail = () => {
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Crédits ECTS</CardTitle>
-            <GraduationCap className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">{ue.credits} ECTS</div>
-            <p className="text-xs text-muted-foreground mt-1">Coefficient: {ue.coefficient}</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Volume Horaire</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">{heuresTotal}h</div>
-            <p className="text-xs text-muted-foreground mt-1">CM, TD & TP inclus</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Matières (ECUE)</CardTitle>
-            <BookOpen className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">{matieres.length}</div>
-            <p className="text-xs text-muted-foreground mt-1">Éléments constitutifs</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Responsable UE</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-bold text-foreground truncate">{ue.responsable || "Non assigné"}</div>
-            <p className="text-xs text-muted-foreground mt-1">Coordonnateur pédagogique</p>
-          </CardContent>
-        </Card>
+        <KpiCard title="Crédits ECTS" value={`${ue.credits} ECTS`} icon={GraduationCap} subtitle={`Coefficient : ${ue.coefficient}`} colorVariant="primary" />
+        <KpiCard title="Volume horaire" value={`${heuresTotal}h`} icon={Clock} subtitle="CM, TD & TP inclus" colorVariant="sky" />
+        <KpiCard title="Matières (ECUE)" value={matieres.length} icon={BookOpen} subtitle="Éléments constitutifs" colorVariant="emerald" />
+        <KpiCard title="Responsable UE" value={ue.responsable || "Non assigné"} icon={Users} subtitle="Coordonnateur pédagogique" colorVariant="purple" />
       </div>
 
       {/* Tabs */}

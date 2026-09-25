@@ -41,6 +41,8 @@ os.environ["DEBUG"] = "False"
 from app.core.config import settings
 settings.DATABASE_URL = TEST_DB_URL
 settings.TENANT_MODE = "standalone"
+settings.ADMISSIONS_STORAGE_DIR = TEST_STORAGE_PATH
+settings.DEBUG = False
 
 # Réinitialiser les caches de moteurs dans database.py
 import app.core.database as db_module
@@ -111,7 +113,18 @@ async def run_e2e_tests():
                 "password": TEST_ADMIN_PASSWORD
             }
         }
-        r2 = await client.post("/api/v1/setup/initialize", json=init_payload)
+        if IS_SQLITE_TEST:
+            r2 = await client.post("/api/v1/setup/initialize", json=init_payload)
+            setup_responses = [r2]
+        else:
+            setup_responses = list(
+                await asyncio.gather(
+                    client.post("/api/v1/setup/initialize", json=init_payload),
+                    client.post("/api/v1/setup/initialize", json=init_payload),
+                )
+            )
+            assert sorted(response.status_code for response in setup_responses) == [201, 409]
+            r2 = next(response for response in setup_responses if response.status_code == 201)
         assert r2.status_code == 201, f"Échec initialisation: {r2.status_code} - {r2.text}"
         data2 = r2.json()
         print("  Réponse:", {k: v for k, v in data2.items() if k != "access_token"})
@@ -650,6 +663,7 @@ async def run_e2e_tests():
             json={
                 "etudiant_id": etudiant_id,
                 "matiere_id": matiere_id,
+                "session_id": data7["id"],
                 "date_absence": "2026-10-01",
                 "duree_heures": 2,
                 "justifiee": True,
@@ -666,6 +680,86 @@ async def run_e2e_tests():
         assert teacher_login.status_code == 200, teacher_login.text
         teacher_token = teacher_login.json()["access_token"]
         teacher_headers = {"Authorization": f"Bearer {teacher_token}"}
+        teacher_global_registry = await client.get(
+            "/api/v1/etudiants/", headers=teacher_headers
+        )
+        assert teacher_global_registry.status_code == 403
+        teacher_assigned_students = await client.get(
+            "/api/v1/pedagogie/etudiants-assignes",
+            params={"matiere_id": matiere_id, "session_id": data7["id"]},
+            headers=teacher_headers,
+        )
+        assert teacher_assigned_students.status_code == 200, teacher_assigned_students.text
+        assert any(
+            student["id"] == etudiant_id
+            for student in teacher_assigned_students.json()
+        )
+        assert all(
+            "email" not in student and "telephone" not in student
+            for student in teacher_assigned_students.json()
+        )
+        external_filiere_response = await client.post(
+            "/api/v1/structure/filieres",
+            json={
+                "nom": "Filière hors périmètre",
+                "code": "E2X",
+                "diplome": "Licence",
+                "duree": 3,
+                "departement_id": department_id,
+            },
+            headers=auth_headers,
+        )
+        assert external_filiere_response.status_code == 201
+        external_student_response = await client.post(
+            "/api/v1/etudiants/",
+            json={
+                "nom": "Hors",
+                "prenom": "Perimetre",
+                "filiere": "Filière hors périmètre",
+                "filiere_id": external_filiere_response.json()["id"],
+                "niveau": "Licence 1",
+                "statut": "actif",
+                "session_id": data7["id"],
+            },
+            headers=auth_headers,
+        )
+        assert external_student_response.status_code == 201
+        external_student_id = external_student_response.json()["id"]
+        teacher_note_without_session = await client.post(
+            "/api/v1/pedagogie/notes",
+            json={
+                "etudiant_id": etudiant_id,
+                "matiere_id": matiere_id,
+                "valeur": 11,
+                "coefficient": 1,
+            },
+            headers=teacher_headers,
+        )
+        assert teacher_note_without_session.status_code == 422
+        teacher_out_of_scope_note = await client.post(
+            "/api/v1/pedagogie/notes",
+            json={
+                "etudiant_id": external_student_id,
+                "matiere_id": matiere_id,
+                "session_id": data7["id"],
+                "valeur": 12,
+                "coefficient": 1,
+            },
+            headers=teacher_headers,
+        )
+        assert teacher_out_of_scope_note.status_code == 422
+        teacher_absence_without_session = await client.post(
+            "/api/v1/pedagogie/absences",
+            json={
+                "etudiant_id": etudiant_id,
+                "matiere_id": matiere_id,
+                "date_absence": "2026-10-02",
+                "duree_heures": 1,
+                "justifiee": False,
+            },
+            headers=teacher_headers,
+        )
+        assert teacher_absence_without_session.status_code == 422
         teacher_portal = await client.get("/api/v1/portail/enseignant", headers=teacher_headers)
         assert teacher_portal.status_code == 200, teacher_portal.text
         teacher_data = teacher_portal.json()
@@ -688,6 +782,49 @@ async def run_e2e_tests():
         )
         assert teacher_context_update.status_code == 403
 
+        accounting_user_response = await client.post(
+            "/api/v1/users/",
+            json={
+                "nom": "Comptabilité",
+                "prenom": "E2E",
+                "email": "comptabilite@ecole-ci.org",
+                "role": "COMPTABILITE",
+                "password": "Comptabilite-2026!",
+            },
+            headers=auth_headers,
+        )
+        assert accounting_user_response.status_code == 201, accounting_user_response.text
+        accounting_user_id = accounting_user_response.json()["id"]
+        accounting_login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "comptabilite@ecole-ci.org", "password": "Comptabilite-2026!"},
+        )
+        assert accounting_login.status_code == 200, accounting_login.text
+        accounting_headers = {
+            "Authorization": f"Bearer {accounting_login.json()['access_token']}"
+        }
+        accounting_full_registry = await client.get(
+            "/api/v1/etudiants/", headers=accounting_headers
+        )
+        assert accounting_full_registry.status_code == 403
+        accounting_student_detail = await client.get(
+            f"/api/v1/etudiants/{etudiant_id}", headers=accounting_headers
+        )
+        assert accounting_student_detail.status_code == 403
+        accounting_summary = await client.get(
+            "/api/v1/etudiants/summary", headers=accounting_headers
+        )
+        assert accounting_summary.status_code == 200, accounting_summary.text
+        assert any(student["id"] == etudiant_id for student in accounting_summary.json())
+        assert all(
+            not ({"email", "telephone", "date_naissance", "adresse", "sexe", "photo_url"} & student.keys())
+            for student in accounting_summary.json()
+        )
+        accounting_audit = await client.get(
+            "/api/v1/audit/events", headers=accounting_headers
+        )
+        assert accounting_audit.status_code == 403
+
         # Portail étudiant : le compte est lié au dossier et ne voit pas le registre global.
         student_user_response = await client.post(
             "/api/v1/users/",
@@ -704,6 +841,19 @@ async def run_e2e_tests():
         assert student_user_response.status_code == 201, student_user_response.text
         student_user_id = student_user_response.json()["id"]
         assert student_user_response.json()["etudiant_id"] == etudiant_id
+        duplicate_student_account = await client.post(
+            "/api/v1/users/",
+            json={
+                "nom": "Doublon",
+                "prenom": "Etudiant",
+                "email": "doublon.etudiant@ecole-ci.org",
+                "role": "ETUDIANT",
+                "password": "Doublon-2026!",
+                "etudiant_id": etudiant_id,
+            },
+            headers=auth_headers,
+        )
+        assert duplicate_student_account.status_code == 409
         student_login = await client.post(
             "/api/v1/auth/login",
             json={"email": "etudiant@ecole-ci.org", "password": "Etudiant-2026!"},
@@ -719,8 +869,54 @@ async def run_e2e_tests():
         assert any(cours["id"] == cours_response.json()["id"] for cours in student_data["cours"])
         student_global_registry = await client.get("/api/v1/etudiants/", headers=student_headers)
         assert student_global_registry.status_code == 403
-        print("  [OK] Portails étudiant/enseignant filtrés côté serveur et accès globaux refusés.")
 
+        from app.core.database import async_session_factory
+        from app.models.utilisateur import Utilisateur
+        from app.services.user_security import (
+            LastActiveAdministratorError,
+            assert_not_last_active_administrator,
+        )
+
+        async with async_session_factory() as security_db:
+            sole_admin = await security_db.get(Utilisateur, data2["user"]["id"])
+            assert sole_admin is not None
+            try:
+                await assert_not_last_active_administrator(
+                    security_db,
+                    sole_admin,
+                    target_role="SECRETARIAT",
+                )
+            except LastActiveAdministratorError:
+                pass
+            else:
+                raise AssertionError("Le dernier administrateur actif a pu être rétrogradé")
+
+        self_disable_admin = await client.put(
+            f"/api/v1/users/{data2['user']['id']}",
+            json={"is_active": False},
+            headers=auth_headers,
+        )
+        assert self_disable_admin.status_code == 400
+        self_delete_admin = await client.delete(
+            f"/api/v1/users/{data2['user']['id']}", headers=auth_headers
+        )
+        assert self_delete_admin.status_code == 400
+        audit_events = await client.get(
+            "/api/v1/audit/events",
+            params={"limit": 200},
+            headers=auth_headers,
+        )
+        assert audit_events.status_code == 200, audit_events.text
+        audit_actions = {event["action"] for event in audit_events.json()}
+        assert "security.setup.initialized" in audit_actions
+        assert "security.user.created" in audit_actions
+        assert "security.user.updated" in audit_actions
+        print("  [OK] Portails filtrés, registres protégés et journal d'audit validés.")
+
+        deleted_accounting_user = await client.delete(
+            f"/api/v1/users/{accounting_user_id}", headers=auth_headers
+        )
+        assert deleted_accounting_user.status_code == 204
         deleted_student_user = await client.delete(
             f"/api/v1/users/{student_user_id}", headers=auth_headers
         )
@@ -739,6 +935,10 @@ async def run_e2e_tests():
             f"/api/v1/etudiants/{etudiant_id}", headers=auth_headers
         )
         assert deleted_student.status_code == 204
+        deleted_external_student = await client.delete(
+            f"/api/v1/etudiants/{external_student_id}", headers=auth_headers
+        )
+        assert deleted_external_student.status_code == 204
 
         updated = await client.put(
             f"/api/v1/sessions/{data7['id']}",

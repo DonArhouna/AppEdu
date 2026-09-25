@@ -91,8 +91,8 @@ export const KpiCard = React.forwardRef<HTMLDivElement, KpiCardProps>(
         {/* Accent bar on left */}
         <div className={cn("absolute left-0 top-0 bottom-0 w-1", styles.borderBar)} />
 
-        <CardHeader className="flex flex-row items-center justify-between pb-2 pl-5 pr-4 pt-4.5">
-          <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate">
+        <CardHeader className="flex min-w-0 flex-row items-center justify-between pb-2 pl-5 pr-4 pt-4">
+          <CardTitle className="min-w-0 truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {title}
           </CardTitle>
           <div className={cn("rounded-xl p-2 shrink-0 transition-transform group-hover:scale-105", styles.iconBg)}>
@@ -101,7 +101,7 @@ export const KpiCard = React.forwardRef<HTMLDivElement, KpiCardProps>(
         </CardHeader>
 
         <CardContent className="pl-5 pr-4 pb-4.5 pt-0">
-          <div className="text-2xl font-bold tracking-tight text-foreground">{value}</div>
+          <div className="break-words text-2xl font-bold tracking-tight text-foreground">{value}</div>
 
           {subtitle && (
             <p className="text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>

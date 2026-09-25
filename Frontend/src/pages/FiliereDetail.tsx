@@ -93,7 +93,7 @@ export default function FiliereDetail() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{filiere.diplome || "Non renseigné"}</div>
-            <p className="text-xs text-muted-foreground">Cycle de formation</p>
+            <p className="text-xs text-muted-foreground">Diplôme ciblé</p>
           </CardContent>
         </Card>
 

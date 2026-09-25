@@ -22,8 +22,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { StudentCardModal } from "@/components/students/StudentCardModal";
-import { etudiantsApi, financesApi, pedagogieApi, sessionsApi, setupApi } from "@/services/apiClient";
-import type { AcademicSession, Note, Payment, Student } from "@/services/apiTypes";
+import { academicApi, etudiantsApi, financesApi, pedagogieApi, sessionsApi, setupApi } from "@/services/apiClient";
+import type { AcademicClass, AcademicCycle, AcademicLevel, AcademicSession, Note, Payment, Student } from "@/services/apiTypes";
 
 const StudentDetail = () => {
   const { id } = useParams();
@@ -34,6 +34,9 @@ const StudentDetail = () => {
   const [session, setSession] = useState<AcademicSession | null>(null);
   const [paiements, setPaiements] = useState<Payment[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [academicClass, setAcademicClass] = useState<AcademicClass | null>(null);
+  const [academicLevel, setAcademicLevel] = useState<AcademicLevel | null>(null);
+  const [academicCycle, setAcademicCycle] = useState<AcademicCycle | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currency, setCurrency] = useState("");
@@ -43,10 +46,13 @@ const StudentDetail = () => {
     setLoading(true);
     setError(null);
     try {
-      const [stuRes, paiementsRes, notesRes] = await Promise.all([
+      const [stuRes, paiementsRes, notesRes, classesRes, levelsRes, cyclesRes] = await Promise.all([
         etudiantsApi.getById(id),
         financesApi.getPaiements({ etudiant_id: id }),
         pedagogieApi.getNotes({ etudiant_id: id }),
+        academicApi.getClasses(),
+        academicApi.getLevels(),
+        academicApi.getCycles(),
       ]);
 
       if (stuRes.error) {
@@ -57,6 +63,12 @@ const StudentDetail = () => {
         const statusResult = await setupApi.getStatus();
         setCurrency(statusResult.data?.devise || "");
         setStudent(s);
+        const currentClass = classesRes.data?.find((item) => item.id === s?.classe_id) || null;
+        const currentLevel = levelsRes.data?.find((item) => item.id === currentClass?.niveau_id) || null;
+        const currentCycle = cyclesRes.data?.find((item) => item.id === currentLevel?.cycle_id) || null;
+        setAcademicClass(currentClass);
+        setAcademicLevel(currentLevel);
+        setAcademicCycle(currentCycle);
         if (s?.session_id) {
           const sesRes = await sessionsApi.getById(s.session_id);
           if (sesRes.data) setSession(sesRes.data);
@@ -191,14 +203,22 @@ const StudentDetail = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                   <p className="text-xs text-muted-foreground">Filière</p>
-                  <p className="font-semibold">{student.filiere || "Non assigné"}</p>
+                  <p className="font-semibold">{student.filiere || "Non assignée"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Classe</p>
+                  <p className="font-semibold">{academicClass ? `${academicClass.code} — ${academicClass.libelle}` : "Non affectée"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Cycle</p>
+                  <p className="font-semibold">{academicCycle?.libelle || "Non résolu"}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Niveau</p>
-                  <p className="font-semibold">{student.niveau || "Non renseigné"}</p>
+                  <p className="font-semibold">{academicLevel?.libelle || student.niveau || "Non renseigné"}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Session Académique</p>

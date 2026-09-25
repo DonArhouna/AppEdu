@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_db, require_admin, require_staff
+from app.api.deps import get_db, require_academic_read, require_academic_structure_write
 from app.models.structure import Campus, Departement, Filiere, UniteEnseignement, Matiere
+from app.models.academic import Classe
 from app.schemas.structure import (
     CampusResponse, CampusCreate, CampusUpdate,
     DepartementResponse, DepartementCreate, DepartementUpdate,
@@ -36,7 +37,7 @@ def _campus_with_hierarchy():
 @router.get("/campuses", response_model=List[CampusResponse], summary="Lister tous les campus")
 async def list_campuses(
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     stmt = _campus_with_hierarchy().order_by(Campus.nom)
     res = await db.execute(stmt)
@@ -44,7 +45,7 @@ async def list_campuses(
 
 
 @router.post("/campuses", response_model=CampusResponse, status_code=status.HTTP_201_CREATED, summary="Créer un campus")
-async def create_campus(payload: CampusCreate, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def create_campus(payload: CampusCreate, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt_check = select(Campus).where(Campus.code == payload.code)
     res_check = await db.execute(stmt_check)
     if res_check.scalar_one_or_none():
@@ -61,7 +62,7 @@ async def create_campus(payload: CampusCreate, db: AsyncSession = Depends(get_db
 async def get_campus(
     campus_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     stmt = _campus_with_hierarchy().where(Campus.id == campus_id)
     res = await db.execute(stmt)
@@ -72,7 +73,7 @@ async def get_campus(
 
 
 @router.put("/campuses/{campus_id}", response_model=CampusResponse, summary="Modifier un campus")
-async def update_campus(campus_id: str, payload: CampusUpdate, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def update_campus(campus_id: str, payload: CampusUpdate, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt = select(Campus).where(Campus.id == campus_id)
     res = await db.execute(stmt)
     campus = res.scalar_one_or_none()
@@ -87,7 +88,7 @@ async def update_campus(campus_id: str, payload: CampusUpdate, db: AsyncSession 
 
 
 @router.delete("/campuses/{campus_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Supprimer un campus")
-async def delete_campus(campus_id: str, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def delete_campus(campus_id: str, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt = select(Campus).where(Campus.id == campus_id)
     res = await db.execute(stmt)
     campus = res.scalar_one_or_none()
@@ -104,7 +105,7 @@ async def delete_campus(campus_id: str, db: AsyncSession = Depends(get_db), _adm
 async def list_departements(
     campus_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     stmt = select(Departement).options(selectinload(Departement.filieres))
     if campus_id:
@@ -115,7 +116,7 @@ async def list_departements(
 
 
 @router.post("/departements", response_model=DepartementResponse, status_code=status.HTTP_201_CREATED, summary="Créer un département")
-async def create_departement(payload: DepartementCreate, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def create_departement(payload: DepartementCreate, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt_check = select(Departement).where(Departement.code == payload.code)
     res_check = await db.execute(stmt_check)
     if res_check.scalar_one_or_none():
@@ -136,7 +137,7 @@ async def create_departement(payload: DepartementCreate, db: AsyncSession = Depe
 async def get_departement(
     dept_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     stmt = select(Departement).options(selectinload(Departement.filieres)).where(Departement.id == dept_id)
     res = await db.execute(stmt)
@@ -147,7 +148,7 @@ async def get_departement(
 
 
 @router.put("/departements/{dept_id}", response_model=DepartementResponse, summary="Modifier un département")
-async def update_departement(dept_id: str, payload: DepartementUpdate, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def update_departement(dept_id: str, payload: DepartementUpdate, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt = select(Departement).where(Departement.id == dept_id)
     res = await db.execute(stmt)
     dept = res.scalar_one_or_none()
@@ -166,7 +167,7 @@ async def update_departement(dept_id: str, payload: DepartementUpdate, db: Async
 
 
 @router.delete("/departements/{dept_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Supprimer un département")
-async def delete_departement(dept_id: str, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def delete_departement(dept_id: str, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt = select(Departement).where(Departement.id == dept_id)
     res = await db.execute(stmt)
     dept = res.scalar_one_or_none()
@@ -183,7 +184,7 @@ async def delete_departement(dept_id: str, db: AsyncSession = Depends(get_db), _
 async def list_filieres(
     departement_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     stmt = select(Filiere)
     if departement_id:
@@ -194,7 +195,7 @@ async def list_filieres(
 
 
 @router.post("/filieres", response_model=FiliereResponse, status_code=status.HTTP_201_CREATED, summary="Créer une filière")
-async def create_filiere(payload: FiliereCreate, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def create_filiere(payload: FiliereCreate, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt_check = select(Filiere).where(Filiere.code == payload.code)
     res_check = await db.execute(stmt_check)
     if res_check.scalar_one_or_none():
@@ -211,7 +212,7 @@ async def create_filiere(payload: FiliereCreate, db: AsyncSession = Depends(get_
 async def get_filiere(
     filiere_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     stmt = select(Filiere).where(Filiere.id == filiere_id)
     res = await db.execute(stmt)
@@ -222,7 +223,7 @@ async def get_filiere(
 
 
 @router.put("/filieres/{filiere_id}", response_model=FiliereResponse, summary="Modifier une filière")
-async def update_filiere(filiere_id: str, payload: FiliereUpdate, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def update_filiere(filiere_id: str, payload: FiliereUpdate, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt = select(Filiere).where(Filiere.id == filiere_id)
     res = await db.execute(stmt)
     fil = res.scalar_one_or_none()
@@ -237,12 +238,20 @@ async def update_filiere(filiere_id: str, payload: FiliereUpdate, db: AsyncSessi
 
 
 @router.delete("/filieres/{filiere_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Supprimer une filière")
-async def delete_filiere(filiere_id: str, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def delete_filiere(filiere_id: str, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt = select(Filiere).where(Filiere.id == filiere_id)
     res = await db.execute(stmt)
     fil = res.scalar_one_or_none()
     if not fil:
         raise HTTPException(status_code=404, detail="Filière introuvable.")
+    linked_classes = await db.execute(
+        select(Classe.id).where(Classe.filiere_id == filiere_id).limit(1)
+    )
+    if linked_classes.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail="La filière est référencée par une classe et ne peut pas être supprimée.",
+        )
     await db.delete(fil)
     await db.commit()
 
@@ -255,7 +264,7 @@ async def list_ues(
     filiere_id: Optional[str] = None,
     semestre: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     stmt = select(UniteEnseignement).options(selectinload(UniteEnseignement.matieres))
     if filiere_id:
@@ -268,7 +277,7 @@ async def list_ues(
 
 
 @router.post("/ues", response_model=UEResponse, status_code=status.HTTP_201_CREATED, summary="Créer une UE")
-async def create_ue(payload: UECreate, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def create_ue(payload: UECreate, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt_check = select(UniteEnseignement).where(UniteEnseignement.code == payload.code)
     res_check = await db.execute(stmt_check)
     if res_check.scalar_one_or_none():
@@ -309,7 +318,7 @@ async def create_ue(payload: UECreate, db: AsyncSession = Depends(get_db), _admi
 async def get_ue(
     ue_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     stmt = select(UniteEnseignement).options(selectinload(UniteEnseignement.matieres)).where(UniteEnseignement.id == ue_id)
     res = await db.execute(stmt)
@@ -320,7 +329,7 @@ async def get_ue(
 
 
 @router.put("/ues/{ue_id}", response_model=UEResponse, summary="Modifier une UE")
-async def update_ue(ue_id: str, payload: UEUpdate, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def update_ue(ue_id: str, payload: UEUpdate, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt = select(UniteEnseignement).where(UniteEnseignement.id == ue_id)
     res = await db.execute(stmt)
     ue = res.scalar_one_or_none()
@@ -337,7 +346,7 @@ async def update_ue(ue_id: str, payload: UEUpdate, db: AsyncSession = Depends(ge
 
 
 @router.delete("/ues/{ue_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Supprimer une UE")
-async def delete_ue(ue_id: str, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def delete_ue(ue_id: str, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt = select(UniteEnseignement).where(UniteEnseignement.id == ue_id)
     res = await db.execute(stmt)
     ue = res.scalar_one_or_none()
@@ -354,7 +363,7 @@ async def delete_ue(ue_id: str, db: AsyncSession = Depends(get_db), _admin=Depen
 async def list_matieres(
     ue_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     stmt = select(Matiere)
     if ue_id:
@@ -365,7 +374,7 @@ async def list_matieres(
 
 
 @router.post("/matieres", response_model=MatiereResponse, status_code=status.HTTP_201_CREATED, summary="Créer une matière")
-async def create_matiere(payload: MatiereCreate, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def create_matiere(payload: MatiereCreate, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt_check = select(Matiere).where(Matiere.code == payload.code)
     res_check = await db.execute(stmt_check)
     if res_check.scalar_one_or_none():
@@ -382,7 +391,7 @@ async def create_matiere(payload: MatiereCreate, db: AsyncSession = Depends(get_
 async def get_matiere(
     matiere_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_staff),
+    _auth=Depends(require_academic_read),
 ):
     stmt = select(Matiere).where(Matiere.id == matiere_id)
     res = await db.execute(stmt)
@@ -393,7 +402,7 @@ async def get_matiere(
 
 
 @router.put("/matieres/{matiere_id}", response_model=MatiereResponse, summary="Modifier une matière")
-async def update_matiere(matiere_id: str, payload: MatiereUpdate, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def update_matiere(matiere_id: str, payload: MatiereUpdate, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt = select(Matiere).where(Matiere.id == matiere_id)
     res = await db.execute(stmt)
     mat = res.scalar_one_or_none()
@@ -408,7 +417,7 @@ async def update_matiere(matiere_id: str, payload: MatiereUpdate, db: AsyncSessi
 
 
 @router.delete("/matieres/{matiere_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Supprimer une matière")
-async def delete_matiere(matiere_id: str, db: AsyncSession = Depends(get_db), _admin=Depends(require_admin)):
+async def delete_matiere(matiere_id: str, db: AsyncSession = Depends(get_db), _admin=Depends(require_academic_structure_write)):
     stmt = select(Matiere).where(Matiere.id == matiere_id)
     res = await db.execute(stmt)
     mat = res.scalar_one_or_none()

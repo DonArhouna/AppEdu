@@ -22,6 +22,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi-card";
 import {
   Dialog,
   DialogContent,
@@ -48,8 +49,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { admissionsApi, extractErrorMessage, sessionsApi, structureApi } from "@/services/apiClient";
+import { academicApi, admissionsApi, extractErrorMessage, sessionsApi, structureApi } from "@/services/apiClient";
 import type {
+  AcademicClass,
+  AcademicCycle,
+  AcademicLevel,
   AcademicSession,
   AdmissionView,
   AdmissionViewFilters,
@@ -103,6 +107,8 @@ const createEmptyForm = (sessionId = ""): CandidatureCreatePayload => ({
   telephone: "",
   adresse: "",
   filiere_id: "",
+  niveau_id: "",
+  classe_id: "",
   niveau: "",
   session_id: sessionId,
   notes: "",
@@ -128,6 +134,9 @@ const PAGE_SIZE = 20;
 const PreInscription = () => {
   const [candidatures, setCandidatures] = useState<Candidature[]>([]);
   const [filieres, setFilieres] = useState<Filiere[]>([]);
+  const [classes, setClasses] = useState<AcademicClass[]>([]);
+  const [levels, setLevels] = useState<AcademicLevel[]>([]);
+  const [cycles, setCycles] = useState<AcademicCycle[]>([]);
   const [sessions, setSessions] = useState<AcademicSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -152,7 +161,7 @@ const PreInscription = () => {
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [candidaturesResult, filieresResult, sessionsResult] = await Promise.all([
+    const [candidaturesResult, filieresResult, sessionsResult, classesResult, levelsResult, cyclesResult] = await Promise.all([
       admissionsApi.getAll({
         search: search.trim() || undefined,
         statut: statusFilter === "tous" ? undefined : statusFilter,
@@ -161,10 +170,14 @@ const PreInscription = () => {
       }),
       structureApi.getFilieres(),
       sessionsApi.getAll(),
+      academicApi.getClasses(),
+      academicApi.getLevels(),
+      academicApi.getCycles(),
     ]);
 
     const firstError =
-      candidaturesResult.error || filieresResult.error || sessionsResult.error;
+      candidaturesResult.error || filieresResult.error || sessionsResult.error ||
+      classesResult.error || levelsResult.error || cyclesResult.error;
     if (firstError) {
       setError(extractErrorMessage(firstError, "Impossible de charger le module d'admissions."));
     }
@@ -178,6 +191,9 @@ const PreInscription = () => {
     setStatusCounts(pageData?.counts || {});
     setFilieres(filieresResult.data || []);
     setSessions(sessionsResult.data || []);
+    setClasses(classesResult.data || []);
+    setLevels(levelsResult.data || []);
+    setCycles(cyclesResult.data || []);
     setLoading(false);
   }, [page, search, statusFilter]);
 
@@ -208,6 +224,13 @@ const PreInscription = () => {
     () => sessions.find((session) => session.statut === "active") || sessions[0],
     [sessions]
   );
+  const availableClasses = useMemo(
+    () => classes.filter((item) => item.actif && item.filiere_id === form.filiere_id),
+    [classes, form.filiere_id]
+  );
+  const selectedClass = classes.find((item) => item.id === form.classe_id);
+  const selectedLevel = levels.find((item) => item.id === selectedClass?.niveau_id);
+  const selectedCycle = cycles.find((item) => item.id === selectedLevel?.cycle_id);
 
   const openCreateDialog = () => {
     setFormError(null);
@@ -303,8 +326,16 @@ const PreInscription = () => {
       setFormError("Le nom, le prénom et l'email du candidat sont obligatoires.");
       return;
     }
-    if (!form.filiere_id || !form.niveau.trim()) {
-      setFormError("La filière et le niveau visés sont obligatoires.");
+    if (!form.filiere_id) {
+      setFormError("La filière visée est obligatoire.");
+      return;
+    }
+    if (availableClasses.length > 0 && !form.classe_id) {
+      setFormError("Sélectionnez la classe visée par le candidat.");
+      return;
+    }
+    if (availableClasses.length === 0 && !form.niveau.trim()) {
+      setFormError("Le niveau visé est obligatoire jusqu'à ce qu'une classe soit configurée.");
       return;
     }
 
@@ -313,8 +344,10 @@ const PreInscription = () => {
       nom: form.nom.trim(),
       prenom: form.prenom.trim(),
       email: form.email.trim(),
-      niveau: form.niveau.trim(),
-      filiere_id: form.filiere_id,
+      niveau: selectedLevel?.libelle || form.niveau.trim(),
+      filiere_id: selectedClass?.filiere_id || form.filiere_id,
+      classe_id: selectedClass?.id,
+      niveau_id: selectedLevel?.id,
       session_id: form.session_id || undefined,
       sexe: form.sexe || undefined,
       date_naissance: form.date_naissance || undefined,
@@ -395,30 +428,34 @@ const PreInscription = () => {
         <p className="text-xs text-muted-foreground">Les indicateurs ci-dessous correspondent aux résultats filtrés.</p>
       )}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="rounded-lg bg-primary/10 p-2 text-primary"><UserRound /></div>
-            <div><p className="text-xs text-muted-foreground">{hasFilters ? "Total filtré" : "Total candidatures"}</p><p className="text-2xl font-semibold">{counts.total}</p></div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="rounded-lg bg-blue-100 p-2 text-blue-700"><FilePlus2 /></div>
-            <div><p className="text-xs text-muted-foreground">Nouvelles</p><p className="text-2xl font-semibold">{counts.nouvelles}</p></div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="rounded-lg bg-amber-100 p-2 text-amber-700"><Filter /></div>
-            <div><p className="text-xs text-muted-foreground">En vérification</p><p className="text-2xl font-semibold">{counts.verification}</p></div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="rounded-lg bg-green-100 p-2 text-green-700"><CheckCircle2 /></div>
-            <div><p className="text-xs text-muted-foreground">Acceptées</p><p className="text-2xl font-semibold">{counts.acceptees}</p></div>
-          </CardContent>
-        </Card>
+        <KpiCard
+          title={hasFilters ? "Total filtré" : "Total candidatures"}
+          value={counts.total}
+          icon={UserRound}
+          subtitle="Dossiers correspondant aux critères"
+          colorVariant="primary"
+        />
+        <KpiCard
+          title="Nouvelles"
+          value={counts.nouvelles}
+          icon={FilePlus2}
+          subtitle="Dossiers à instruire"
+          colorVariant="sky"
+        />
+        <KpiCard
+          title="En vérification"
+          value={counts.verification}
+          icon={Filter}
+          subtitle="Dossiers en cours de traitement"
+          colorVariant="amber"
+        />
+        <KpiCard
+          title="Acceptées"
+          value={counts.acceptees}
+          icon={CheckCircle2}
+          subtitle="Dossiers validés"
+          colorVariant="emerald"
+        />
       </div>
 
       <Card>
@@ -648,7 +685,7 @@ const PreInscription = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="candidature-filière">Filière</Label>
-                <Select value={form.filiere_id} onValueChange={(value) => updateField("filiere_id", value)}>
+                <Select value={form.filiere_id} onValueChange={(value) => setForm((current) => ({ ...current, filiere_id: value, classe_id: "", niveau_id: "", niveau: "" }))}>
                   <SelectTrigger id="candidature-filière"><SelectValue placeholder="Sélectionner une filière" /></SelectTrigger>
                   <SelectContent>
                     {filieres.map((filiere) => (
@@ -658,8 +695,32 @@ const PreInscription = () => {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="candidature-niveau">Niveau</Label>
-                <Input id="candidature-niveau" value={form.niveau} placeholder="Licence 1" onChange={(event) => updateField("niveau", event.target.value)} required />
+                <Label htmlFor="candidature-classe">Classe / Niveau</Label>
+                {availableClasses.length > 0 ? (
+                  <Select
+                    value={form.classe_id || undefined}
+                    onValueChange={(value) => {
+                      const selected = classes.find((item) => item.id === value);
+                      const level = levels.find((item) => item.id === selected?.niveau_id);
+                      setForm((current) => ({
+                        ...current,
+                        classe_id: value,
+                        filiere_id: selected?.filiere_id || current.filiere_id,
+                        niveau_id: level?.id,
+                        niveau: level?.libelle || "",
+                      }));
+                    }}
+                  >
+                    <SelectTrigger id="candidature-classe"><SelectValue placeholder="Sélectionner une classe" /></SelectTrigger>
+                    <SelectContent>
+                      {availableClasses.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>{item.code} — {item.libelle}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input id="candidature-classe" value={form.niveau} placeholder="Licence 1" onChange={(event) => updateField("niveau", event.target.value)} required />
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="candidature-session">Session cible</Label>
@@ -686,6 +747,13 @@ const PreInscription = () => {
                 <Textarea id="candidature-notes" value={form.notes} onChange={(event) => updateField("notes", event.target.value)} placeholder="Informations visibles uniquement par le personnel autorisé" />
               </div>
             </div>
+            {selectedClass && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm">
+                <Badge variant="outline">{selectedCycle?.libelle || "Cycle non résolu"}</Badge>
+                <span className="text-muted-foreground">Niveau :</span>
+                <strong>{selectedLevel?.libelle || "Niveau non résolu"}</strong>
+              </div>
+            )}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Annuler</Button>
               <Button type="submit" disabled={saving || filieres.length === 0}>

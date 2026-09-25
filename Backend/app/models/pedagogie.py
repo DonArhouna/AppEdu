@@ -103,6 +103,12 @@ class Absence(Base, TimestampMixin):
     matiere_id: Mapped[Optional[str]] = mapped_column(
         String(50), ForeignKey("matieres.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    session_id: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        ForeignKey("sessions_academiques.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     date_absence: Mapped[date] = mapped_column(Date, nullable=False)
     duree_heures: Mapped[float] = mapped_column(Float, nullable=False)
     justifiee: Mapped[bool] = mapped_column(Boolean, nullable=False)

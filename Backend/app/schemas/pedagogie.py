@@ -139,6 +139,7 @@ class AbsenceBase(BaseModel):
     etudiant_id: str
     cours_id: Optional[str] = None
     matiere_id: Optional[str] = None
+    session_id: Optional[str] = None
     date_absence: date
     duree_heures: float = Field(..., gt=0.0)
     justifiee: bool

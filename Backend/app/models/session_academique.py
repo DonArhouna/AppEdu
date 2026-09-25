@@ -29,6 +29,12 @@ class SessionAcademique(Base, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="PeriodePaiement.ordre"
     )
+    # Les inscriptions sont historiques : aucune suppression en cascade.
+    inscriptions: Mapped[List["Inscription"]] = relationship(
+        "Inscription",
+        back_populates="session",
+        lazy="selectin",
+    )
 
     def __repr__(self) -> str:
         return f"<SessionAcademique id='{self.id}' nom='{self.nom}' code='{self.code}'>"

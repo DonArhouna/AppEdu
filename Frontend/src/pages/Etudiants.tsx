@@ -96,8 +96,12 @@ const Etudiants = () => {
             lieuNaissance: s.lieu_naissance || "",
             promotion: "",
             filiere: s.filiere || "",
+            filiereId: s.filiere_id || "",
+            classeId: s.classe_id || "",
             niveau: s.niveau || "",
             cycle: s.niveau?.startsWith("Master") ? "Master" : s.niveau?.startsWith("Licence") ? "Licence" : "",
+            cycleId: "",
+            niveauId: "",
             statut: s.statut || "",
             creditsValides: undefined,
             sessionId: s.session_id || "",
@@ -141,29 +145,44 @@ const Etudiants = () => {
   const availableNiveaux = Array.from(new Set(students.map((student) => student.niveau).filter(Boolean)));
 
   const handleSaveStudent = async (student: Student) => {
-    const payload = {
+    const profilePayload = {
       nom: student.nom,
       prenom: student.prenom,
       email: student.email,
       telephone: student.telephone,
-      filiere: student.filiere,
-      niveau: student.niveau,
-      session_id: student.sessionId || undefined,
       statut: student.statut,
+    };
+    const enrollmentPayload = {
+      ...profilePayload,
+      filiere: student.filiere,
+      filiere_id: student.filiereId,
+      classe_id: student.classeId,
+      niveau: student.niveau,
+      session_id: student.sessionId,
     };
 
     if (selectedStudent?.id) {
-      const res = await etudiantsApi.update(selectedStudent.id, payload);
+      const res = await etudiantsApi.update(selectedStudent.id, profilePayload);
       if (res.error) {
         toast.error(`Erreur : ${res.error}`);
-        return;
+        return false;
       }
       toast.success("Dossier étudiant mis à jour.");
-    } else {
-      const res = await etudiantsApi.create(payload);
+    } else if (student.typeInscription === "reinscription" && student.id) {
+      const res = await etudiantsApi.inscrire(student.id, {
+        session_id: student.sessionId,
+        classe_id: student.classeId,
+      });
       if (res.error) {
         toast.error(`Erreur : ${res.error}`);
-        return;
+        return false;
+      }
+      toast.success("Réinscription enregistrée dans la nouvelle classe.");
+    } else {
+      const res = await etudiantsApi.create(enrollmentPayload);
+      if (res.error) {
+        toast.error(`Erreur : ${res.error}`);
+        return false;
       }
       toast.success("Nouvel étudiant inscrit avec succès.");
     }
@@ -171,6 +190,7 @@ const Etudiants = () => {
     setDialogOpen(false);
     setSelectedStudent(null);
     await loadData();
+    return true;
   };
 
   const handleEditStudent = (student: Student) => {
@@ -245,28 +265,28 @@ const Etudiants = () => {
           title="Total Inscrits"
           value={students.length}
           icon={Users}
-          trendLabel="Dossiers enregistrés"
+          subtitle="Dossiers enregistrés"
           colorVariant="primary"
         />
         <KpiCard
           title="Cycle Licence"
           value={students.filter((s) => s.cycle === "Licence").length}
           icon={BookOpen}
-          trendLabel="Niveaux L1 à L3"
+          subtitle="Niveaux L1 à L3"
           colorVariant="emerald"
         />
         <KpiCard
           title="Cycle Master"
           value={students.filter((s) => s.cycle === "Master").length}
           icon={GraduationCap}
-          trendLabel="Niveaux M1 et M2"
+          subtitle="Niveaux M1 et M2"
           colorVariant="purple"
         />
         <KpiCard
           title="Actifs / Régularisés"
           value={students.filter((s) => s.statut === "actif").length}
           icon={RefreshCw}
-          trendLabel="Statut actif"
+          subtitle="Statut actif"
           colorVariant="amber"
         />
       </div>

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_db, require_comptabilite, get_current_active_user
+from app.api.deps import get_db, require_finance_read, require_finance_write
 from app.models.finance import GrilleTarifaire, Facture, Paiement, Recu
 from app.models.etudiant import Etudiant
 from app.models.structure import Filiere
@@ -46,7 +46,7 @@ async def list_fee_grids(
     filiere_id: Optional[str] = None,
     actif: Optional[bool] = None,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_comptabilite),
+    _auth=Depends(require_finance_read),
 ):
     stmt = select(GrilleTarifaire)
     if filiere_id:
@@ -66,7 +66,7 @@ async def list_fee_grids(
 async def get_fee_grid(
     grille_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_comptabilite),
+    _auth=Depends(require_finance_read),
 ):
     grille = await db.get(GrilleTarifaire, grille_id)
     if not grille:
@@ -83,7 +83,7 @@ async def get_fee_grid(
 async def create_fee_grid(
     payload: GrilleTarifaireCreate,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_comptabilite),
+    _auth=Depends(require_finance_write),
 ):
     filiere = (await db.execute(
         select(Filiere).where(Filiere.id == payload.filiere_id)
@@ -129,7 +129,7 @@ async def update_fee_grid(
     grille_id: str,
     payload: GrilleTarifaireUpdate,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_comptabilite),
+    _auth=Depends(require_finance_write),
 ):
     grille = await db.get(GrilleTarifaire, grille_id)
     if not grille:
@@ -182,7 +182,7 @@ async def update_fee_grid(
 async def delete_fee_grid(
     grille_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_comptabilite),
+    _auth=Depends(require_finance_write),
 ):
     grille = await db.get(GrilleTarifaire, grille_id)
     if not grille:
@@ -200,7 +200,7 @@ async def list_factures(
     session_id: Optional[str] = None,
     statut: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_comptabilite),
+    _auth=Depends(require_finance_read),
 ):
     stmt = select(Facture)
     if etudiant_id:
@@ -218,7 +218,7 @@ async def list_factures(
 async def create_facture(
     payload: FactureCreate,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_comptabilite),
+    _auth=Depends(require_finance_write),
 ):
     annee = payload.date_emission.year
     numero = payload.numero_facture
@@ -247,7 +247,7 @@ async def create_facture(
 
 
 @router.get("/factures/{facture_id}", response_model=FactureResponse, summary="Détail d'une facture")
-async def get_facture(facture_id: str, db: AsyncSession = Depends(get_db), _auth=Depends(require_comptabilite)):
+async def get_facture(facture_id: str, db: AsyncSession = Depends(get_db), _auth=Depends(require_finance_read)):
     stmt = select(Facture).where(Facture.id == facture_id)
     res = await db.execute(stmt)
     facture = res.scalar_one_or_none()
@@ -264,7 +264,7 @@ async def list_paiements(
     etudiant_id: Optional[str] = None,
     session_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_comptabilite),
+    _auth=Depends(require_finance_read),
 ):
     stmt = select(Paiement)
     if etudiant_id:
@@ -280,7 +280,7 @@ async def list_paiements(
 async def get_paiement(
     paiement_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_comptabilite),
+    _auth=Depends(require_finance_read),
 ):
     stmt = (
         select(Paiement)
@@ -303,7 +303,7 @@ async def get_paiement(
 async def create_paiement(
     payload: PaiementCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Utilisateur = Depends(require_comptabilite),
+    current_user: Utilisateur = Depends(require_finance_write),
 ):
     """
     Enregistre un paiement étudiant :
@@ -485,7 +485,7 @@ async def create_paiement(
 async def get_recu(
     recu_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_comptabilite),
+    _auth=Depends(require_finance_read),
 ):
     stmt = select(Recu).where(Recu.id == recu_id)
     res = await db.execute(stmt)
@@ -499,7 +499,7 @@ async def get_recu(
 async def get_recu_by_paiement(
     paiement_id: str,
     db: AsyncSession = Depends(get_db),
-    _auth=Depends(require_comptabilite),
+    _auth=Depends(require_finance_read),
 ):
     stmt = select(Recu).where(Recu.paiement_id == paiement_id)
     res = await db.execute(stmt)
@@ -513,7 +513,7 @@ async def get_recu_by_paiement(
 # BALANCE ÂGÉE & REPORTING
 # ---------------------------------------------------------------------------
 @router.get("/balance-agee", response_model=BalanceAgeeResponse, summary="Calculer la balance âgée des créances")
-async def get_balance_agee(db: AsyncSession = Depends(get_db), _auth=Depends(require_comptabilite)):
+async def get_balance_agee(db: AsyncSession = Depends(get_db), _auth=Depends(require_finance_read)):
     """Génère la balance âgée des créances scolaires par palier de retard (0-30, 31-60, >60 jours)."""
     today = date.today()
     stmt = (

@@ -7,9 +7,17 @@
  */
 
 import type {
+  AcademicClass,
+  AcademicClassInput,
   AcademicContext,
+  AcademicCycle,
+  AcademicCycleInput,
+  AcademicLevel,
+  AcademicLevelInput,
   AcademicSession,
+  AcademicTemplateResult,
   ApiRecord,
+  AuditEvent,
   AuthUser,
   Campus,
   Candidature,
@@ -24,6 +32,7 @@ import type {
   AdmissionDocumentStatus,
   AdmissionDecisionType,
   Department,
+  Enrollment,
   Filiere,
   Matiere,
   TeachingUnit,
@@ -36,8 +45,18 @@ import type {
   Note,
   Payment,
   Receipt,
+  ImportAnalyse,
+  ImportBatch,
+  ImportModele,
+  ImportMode,
+  ImportValidation,
+  RbacPermission,
+  RbacRole,
+  RbacUserAccess,
+  RbacUserPermissions,
   SetupStatus,
   Student,
+  StudentSummary,
   StudentPortalData,
   TeacherPortalData,
   User,
@@ -274,6 +293,131 @@ export const sessionsApi = {
 // ---------------------------------------------------------------------------
 // 3. Structure Académique (Campus, Dép., Filières, UEs, Matières)
 // ---------------------------------------------------------------------------
+const normalizeCycle = (item: AcademicCycle): AcademicCycle => ({
+  ...item,
+  nom: item.nom || item.libelle,
+  libelle: item.libelle || item.nom,
+  ordre: item.ordre ?? item.rang,
+  rang: item.rang ?? item.ordre,
+});
+
+const normalizeLevel = (item: AcademicLevel): AcademicLevel => ({
+  ...item,
+  nom: item.nom || item.libelle,
+  libelle: item.libelle || item.nom,
+  ordre: item.ordre ?? item.rang,
+  rang: item.rang ?? item.ordre,
+  cycle: item.cycle ? normalizeCycle(item.cycle) : item.cycle,
+});
+
+const academicClassCode = (item: AcademicClass) =>
+  item.code || [item.filiere?.code, item.niveau?.code].filter(Boolean).join("-").toUpperCase();
+
+const normalizeClass = (item: AcademicClass): AcademicClass => {
+  const code = academicClassCode(item);
+  const derivedLabel = [item.filiere?.nom, item.niveau?.nom || item.niveau?.libelle]
+    .filter(Boolean)
+    .join(" — ");
+  return {
+    ...item,
+    code,
+    libelle: item.libelle || item.nom || derivedLabel || code,
+    filiere: item.filiere || null,
+    niveau: item.niveau ? normalizeLevel(item.niveau) : item.niveau,
+    cycle: item.cycle ? normalizeCycle(item.cycle) : item.cycle,
+  };
+};
+
+const withNormalizedData = <T>(
+  result: ApiResult<T[]>,
+  normalize: (item: T) => T
+): ApiResult<T[]> => ({
+  ...result,
+  data: result.data?.map(normalize),
+});
+
+export const academicApi = {
+  getCycles: async () =>
+    withNormalizedData(await request<AcademicCycle[]>("/academic/cycles"), normalizeCycle),
+  createCycle: async (data: AcademicCycleInput) => {
+    const result = await request<AcademicCycle>("/academic/cycles", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return result.data ? { ...result, data: normalizeCycle(result.data) } : result;
+  },
+  updateCycle: async (id: string, data: Partial<AcademicCycleInput>) => {
+    const result = await request<AcademicCycle>(`/academic/cycles/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return result.data ? { ...result, data: normalizeCycle(result.data) } : result;
+  },
+  deleteCycle: (id: string) =>
+    request<void>(`/academic/cycles/${id}`, { method: "DELETE" }),
+
+  getLevels: async (cycleId?: string) => {
+    const params = new URLSearchParams();
+    if (cycleId) params.append("cycle_id", cycleId);
+    return withNormalizedData(
+      await request<AcademicLevel[]>(`/academic/niveaux?${params.toString()}`),
+      normalizeLevel
+    );
+  },
+  createLevel: async (data: AcademicLevelInput) => {
+    const result = await request<AcademicLevel>("/academic/niveaux", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return result.data ? { ...result, data: normalizeLevel(result.data) } : result;
+  },
+  updateLevel: async (id: string, data: Partial<AcademicLevelInput>) => {
+    const result = await request<AcademicLevel>(`/academic/niveaux/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return result.data ? { ...result, data: normalizeLevel(result.data) } : result;
+  },
+  deleteLevel: (id: string) =>
+    request<void>(`/academic/niveaux/${id}`, { method: "DELETE" }),
+
+  getClasses: async (filters?: { filiereId?: string; niveauId?: string; cycleId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.filiereId) params.append("filiere_id", filters.filiereId);
+    if (filters?.niveauId) params.append("niveau_id", filters.niveauId);
+    if (filters?.cycleId) params.append("cycle_id", filters.cycleId);
+    return withNormalizedData(
+      await request<AcademicClass[]>(`/academic/classes?${params.toString()}`),
+      normalizeClass
+    );
+  },
+  createClass: async (data: AcademicClassInput) => {
+    const result = await request<AcademicClass>("/academic/classes", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    return result.data ? { ...result, data: normalizeClass(result.data) } : result;
+  },
+  updateClass: async (id: string, data: Partial<AcademicClassInput>) => {
+    const result = await request<AcademicClass>(`/academic/classes/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return result.data ? { ...result, data: normalizeClass(result.data) } : result;
+  },
+  deleteClass: (id: string) =>
+    request<void>(`/academic/classes/${id}`, { method: "DELETE" }),
+
+  loadLmdTemplate: () =>
+    request<AcademicTemplateResult>("/academic/modele-lmd/charger", { method: "POST" }),
+  listEnrollments: (etudiantId?: string, activeOnly = false) => {
+    const params = new URLSearchParams();
+    if (etudiantId) params.append("etudiant_id", etudiantId);
+    if (activeOnly) params.append("active_only", "true");
+    return request<Enrollment[]>(`/academic/inscriptions?${params.toString()}`);
+  },
+};
+
 export const structureApi = {
   // Campus
   getCampuses: () => request<Campus[]>("/structure/campuses"),
@@ -382,6 +526,21 @@ export const etudiantsApi = {
     if (filters?.statut) params.append("statut", filters.statut);
     return request<Student[]>(`/etudiants/?${params.toString()}`);
   },
+  getSummary: (filters?: {
+    search?: string;
+    filiere?: string;
+    sessionId?: string;
+    statut?: string;
+    niveau?: string;
+  }) => {
+    const params = new URLSearchParams();
+    if (filters?.search) params.append("search", filters.search);
+    if (filters?.filiere) params.append("filiere", filters.filiere);
+    if (filters?.sessionId) params.append("session_id", filters.sessionId);
+    if (filters?.statut) params.append("statut", filters.statut);
+    if (filters?.niveau) params.append("niveau", filters.niveau);
+    return request<StudentSummary[]>(`/etudiants/summary?${params.toString()}`);
+  },
   getById: (id: string) => request<Student>(`/etudiants/${id}`),
   create: (data: unknown) =>
     request<Student>("/etudiants/", {
@@ -395,7 +554,13 @@ export const etudiantsApi = {
     }),
   delete: (id: string) =>
     request<void>(`/etudiants/${id}`, { method: "DELETE" }),
-  inscrire: (id: string, payload: { session_id: string; filiere?: string; niveau?: string }) =>
+  inscrire: (
+    id: string,
+    payload: {
+      session_id: string;
+      classe_id: string;
+    }
+  ) =>
     request<ApiRecord>(`/etudiants/${id}/inscrire`, {
       method: "POST",
       body: JSON.stringify(payload),
@@ -406,6 +571,11 @@ export const etudiantsApi = {
 // 5. Pédagogie & Moteur de Délibération
 // ---------------------------------------------------------------------------
 export const pedagogieApi = {
+  getAssignedStudents: (matiereId: string, sessionId: string) => {
+    const params = new URLSearchParams({ matiere_id: matiereId, session_id: sessionId });
+    return request<StudentSummary[]>(`/pedagogie/etudiants-assignes?${params.toString()}`);
+  },
+
   // Cours & Emplois du temps
   getCours: (matiereId?: string, jour?: string) => {
     const params = new URLSearchParams();
@@ -561,6 +731,94 @@ export const usersApi = {
   delete: (id: number) => request<void>(`/users/${id}`, { method: "DELETE" }),
 };
 
+export const etudiantImportApi = {
+  /** Contrat du fichier attendu : en-tetes documentes, sans donnee fictive. */
+  getModele: () => request<ImportModele>("/etudiants/import/modele"),
+  /**
+   * Analyse un fichier (dry-run). Aucune ecriture metier : le backend
+   * retourne un rapport ligne a ligne que l'administrateur valide ensuite.
+   */
+  analyser: (file: File, mode: ImportMode) => {
+    const formData = new FormData();
+    formData.append("fichier", file, file.name);
+    formData.append("mode", mode);
+    return request<ImportAnalyse>("/etudiants/import/analyse", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  /** Ecrit les lignes valides du lot. Idempotent. */
+  valider: (batchId: string) =>
+    request<ImportValidation>(`/etudiants/import/${encodeURIComponent(batchId)}/valider`, {
+      method: "POST",
+    }),
+  annuler: (batchId: string) =>
+    request<ImportBatch>(`/etudiants/import/${encodeURIComponent(batchId)}/annuler`, {
+      method: "POST",
+    }),
+  lister: (limite = 20) => request<ImportBatch[]>(`/etudiants/import/?limite=${limite}`),
+  getLot: (batchId: string) =>
+    request<ImportBatch>(`/etudiants/import/${encodeURIComponent(batchId)}`),
+  /** URL du modele CSV : le navigateur telecharge le fichier directement. */
+  urlModeleCsv: () => `${API_BASE_URL}/etudiants/import/modele.csv`,
+};
+
+export const rbacApi = {
+  getPermissions: (filters?: { domaine?: string; actif?: boolean; systeme?: boolean }) => {
+    const params = new URLSearchParams();
+    if (filters?.domaine) params.append("domaine", filters.domaine);
+    if (filters?.actif !== undefined) params.append("actif", String(filters.actif));
+    if (filters?.systeme !== undefined) params.append("systeme", String(filters.systeme));
+    const query = params.toString();
+    return request<RbacPermission[]>(`/rbac/permissions${query ? `?${query}` : ""}`);
+  },
+  getRoles: () => request<RbacRole[]>("/rbac/roles"),
+  createRole: (data: { code: string; libelle: string; description?: string | null; ordre?: number; actif?: boolean }) =>
+    request<RbacRole>("/rbac/roles", { method: "POST", body: JSON.stringify(data) }),
+  updateRole: (code: string, data: { libelle?: string; description?: string | null; ordre?: number; actif?: boolean }) =>
+    request<RbacRole>(`/rbac/roles/${encodeURIComponent(code)}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteRole: (code: string) =>
+    request<void>(`/rbac/roles/${encodeURIComponent(code)}`, { method: "DELETE" }),
+  getRolePermissions: (code: string) =>
+    request<RbacPermission[]>(`/rbac/roles/${encodeURIComponent(code)}/permissions`),
+  replaceRolePermissions: (code: string, data: { permissions: string[]; motif?: string | null }) =>
+    request<RbacRole>(`/rbac/roles/${encodeURIComponent(code)}/permissions`, { method: "PUT", body: JSON.stringify(data) }),
+  addRolePermission: (code: string, data: { permission: string; motif?: string | null }) =>
+    request<RbacPermission>(`/rbac/roles/${encodeURIComponent(code)}/permissions`, { method: "POST", body: JSON.stringify(data) }),
+  removeRolePermission: (code: string, permissionCode: string) =>
+    request<RbacRole>(`/rbac/roles/${encodeURIComponent(code)}/permissions/${encodeURIComponent(permissionCode)}`, { method: "DELETE" }),
+  getUsers: (roleCode?: string) => {
+    const params = new URLSearchParams();
+    if (roleCode) params.set("role_code", roleCode);
+    const query = params.toString();
+    return request<RbacUserAccess[]>(`/rbac/users/roles${query ? `?${query}` : ""}`);
+  },
+  assignRole: (code: string, data: { user_ids: number[]; motif?: string | null; aligner_role_legacy?: boolean }) =>
+    request<{ role_code: string; affectes: number[]; deja_affectes: number[] }>(`/rbac/roles/${encodeURIComponent(code)}/users`, { method: "POST", body: JSON.stringify(data) }),
+  unassignRole: (code: string, userId: number) =>
+    request<void>(`/rbac/roles/${encodeURIComponent(code)}/users/${userId}`, { method: "DELETE" }),
+  getUserPermissions: (userId: number) =>
+    request<RbacUserPermissions>(`/rbac/users/${userId}/permissions`),
+};
+
+export const auditApi = {
+  getEvents: (filters?: {
+    action?: string;
+    resourceType?: string;
+    resourceId?: string;
+    actorId?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams();
+    if (filters?.action) params.append("action", filters.action);
+    if (filters?.resourceType) params.append("resource_type", filters.resourceType);
+    if (filters?.resourceId) params.append("resource_id", filters.resourceId);
+    if (filters?.actorId !== undefined) params.append("actor_id", String(filters.actorId));
+    if (filters?.limit !== undefined) params.append("limit", String(filters.limit));
+    return request<AuditEvent[]>(`/audit/events?${params.toString()}`);
+  },
+};
+
 export const admissionsApi = {
   getAll: (filters?: {
     search?: string;
@@ -663,6 +921,8 @@ export default {
   pedagogie: pedagogieApi,
   finances: financesApi,
   users: usersApi,
+  etudiantImport: etudiantImportApi,
+  rbac: rbacApi,
   portals: portalsApi,
   admissions: admissionsApi,
 };

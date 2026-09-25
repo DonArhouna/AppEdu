@@ -70,16 +70,37 @@ export const AVAILABLE_ROLES: RoleInfo[] = [
 interface RBACContextValue {
   currentRole: UserRole;
   currentRoleInfo: RoleInfo;
+  /** Autorite dynamique pure (ce que les roles dynamiques accordent). */
+  dynamicPermissions: string[];
+  /** Droits reellement exerçables, calculés par le backend. */
+  permissions: string[];
+  roles: string[];
+  authzVersion?: string | null;
+  /** Contrôle historique par rôle, conservé pour les libellés d'interface. */
   hasAccess: (allowedRoles?: UserRole[]) => boolean;
+  /**
+   * Contrôle d'accès based on the server-computed rights.
+   * La source de vérité est `/auth/me` : le frontend ne duplique aucune matrice.
+   */
+  hasPermission: (permission: string) => boolean;
 }
 
 const RBACContext = createContext<RBACContextValue | undefined>(undefined);
+const EMPTY_PERMISSIONS: string[] = [];
+const EMPTY_ROLES: string[] = [];
 
 export const RBACProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const currentRole = user?.role ?? "ETUDIANT";
   const currentRoleInfo =
     AVAILABLE_ROLES.find((role) => role.id === currentRole) || AVAILABLE_ROLES[0];
+
+  const dynamicPermissions = user?.permissions ?? EMPTY_PERMISSIONS;
+  const roles = user?.roles ?? EMPTY_ROLES;
+  const authzVersion = user?.authz_version;
+  // Repli sur l'autorité dynamique pure si le backend ne renvoie pas encore
+  // `permissions_effectives` (instance antérieure à la bascule des guards).
+  const permissions = user?.permissions_effectives ?? dynamicPermissions;
 
   const hasAccess = useCallback(
     (allowedRoles?: UserRole[]): boolean => {
@@ -90,9 +111,23 @@ export const RBACProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [currentRole]
   );
 
+  const hasPermission = useCallback(
+    (permission: string): boolean => currentRole === "ADMIN" || permissions.includes(permission),
+    [currentRole, permissions]
+  );
+
   const value = useMemo(
-    () => ({ currentRole, currentRoleInfo, hasAccess }),
-    [currentRole, currentRoleInfo, hasAccess]
+    () => ({
+      currentRole,
+      currentRoleInfo,
+      dynamicPermissions,
+      permissions,
+      roles,
+      authzVersion,
+      hasAccess,
+      hasPermission,
+    }),
+    [authzVersion, currentRole, currentRoleInfo, dynamicPermissions, hasAccess, hasPermission, permissions, roles]
   );
 
   return <RBACContext.Provider value={value}>{children}</RBACContext.Provider>;

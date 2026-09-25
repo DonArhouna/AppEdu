@@ -1,7 +1,8 @@
 """
 Authentication Endpoints :
 - POST /login : Connexion avec email et mot de passe, génération du token JWT
-- GET /me : Profil de l'utilisateur actuellement connecté
+- GET /me : Profil de l'utilisateur actuellement connecté, augmenté des rôles
+  dynamiques et des permissions effectives
 """
 
 from datetime import datetime, timezone
@@ -10,12 +11,14 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.api.deps import get_db, get_current_active_user
+from app.api.deps import get_current_active_user, get_db, legacy_permissions_for
 from app.core.config import settings
 from app.core.security import verify_password, create_access_token, get_password_hash
-from app.models.utilisateur import Utilisateur
+from app.models.utilisateur import Utilisateur, UserRole
 from app.schemas.auth import LoginRequest, TokenResponse
+from app.schemas.rbac import CurrentUserResponse
 from app.schemas.user import CurrentProfileUpdate, PasswordChange, UserResponse
+from app.services.rbac_service import effective_permissions
 
 router = APIRouter()
 
@@ -66,12 +69,42 @@ async def login(
     )
 
 
-@router.get("/me", response_model=UserResponse, summary="Profil utilisateur connecté")
+@router.get("/me", response_model=CurrentUserResponse, summary="Profil utilisateur connecté")
 async def get_current_user_profile(
-    current_user: Utilisateur = Depends(get_current_active_user)
+    db: AsyncSession = Depends(get_db),
+    current_user: Utilisateur = Depends(get_current_active_user),
 ):
-    """Retourne les informations du profil de l'utilisateur actuellement authentifié."""
-    return UserResponse.model_validate(current_user)
+    """Retourne le profil de l'utilisateur actuellement authentifié.
+
+    Le contrat historique est intégralement préservé : ``role`` reste la
+    projection legacy et ``is_superuser`` reste la projection historique.
+    Quatre champs additifs exposent l'autorité :
+
+    - ``roles``                  : codes des rôles dynamiques actifs portés ;
+    - ``permissions``            : autorité dynamique **pure** (allow-only) ;
+    - ``permissions_effectives`` : droits **réellement exerçables**, c'est-à-dire
+      l'union des permissions dynamiques et de la fenêtre de compatibilité du
+      rôle legacy.  C'est le champ que l'interface doit utiliser pour afficher
+      un menu ou ouvrir une vue, sans maintenir de matrice locale ;
+    - ``authz_version``          : horodatage de la dernière modification
+      d'autorité, à utiliser pour invalider un cache côté client.
+
+    Les permissions sont résolues dans la transaction de la requête : la
+    réponse est atomique avec l'état de la base au moment de la lecture.
+    """
+    profile = CurrentUserResponse.model_validate(current_user)
+    authorization = await effective_permissions(db, current_user)
+    profile.roles = list(authorization.role_codes)
+    profile.permissions = list(authorization.permission_codes)
+    # Fenêtre legacy issue de la même table de guards que les endpoints : le
+    # client ne peut donc ni inventer ni manquer un droit.
+    profile.permissions_effectives = sorted(
+        set(authorization.permission_codes)
+        | set(legacy_permissions_for(current_user.role))
+        | ({"dashboard.read"} if current_user.role == UserRole.ADMIN.value else set())
+    )
+    profile.authz_version = authorization.authz_version
+    return profile
 
 
 @router.patch("/me", response_model=UserResponse, summary="Modifier son profil")

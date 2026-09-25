@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,7 +74,7 @@ const Paiements = () => {
       const [pList, fList, studentsResult, statusResult] = await Promise.all([
         financesApi.getPaiements(),
         financesApi.getFactures(),
-        etudiantsApi.getAll(),
+        etudiantsApi.getSummary(),
         setupApi.getStatus(),
       ]);
 
@@ -216,64 +217,10 @@ const Paiements = () => {
       )}
 
       {/* Uniform KPI Cards Standard */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <Card className="card-base relative overflow-hidden">
-          <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />
-          <CardHeader className="flex flex-row items-center justify-between pb-2 pl-5">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Total Encaissé
-            </CardTitle>
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500">
-              <DollarSign className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent className="pl-5">
-            <div className="text-2xl font-bold text-emerald-600 font-mono">
-              {totalEncaisse.toLocaleString()} {currency || "devise de l'établissement"}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {paiements.length} règlements validés en caisse
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="card-base relative overflow-hidden">
-          <div className="absolute left-0 top-0 bottom-0 w-1 bg-destructive" />
-          <CardHeader className="flex flex-row items-center justify-between pb-2 pl-5">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Impayés en Attente
-            </CardTitle>
-            <div className="p-2 rounded-xl bg-destructive/10 text-destructive">
-              <AlertCircle className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent className="pl-5">
-            <div className="text-2xl font-bold text-destructive font-mono">
-              {totalImpayes.toLocaleString()} {currency || "devise de l'établissement"}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {impayes.length} dossiers d'étudiants en retard
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="card-base relative overflow-hidden">
-          <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
-          <CardHeader className="flex flex-row items-center justify-between pb-2 pl-5">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Taux de Recouvrement
-            </CardTitle>
-            <div className="p-2 rounded-xl bg-primary/10 text-primary">
-              <CreditCard className="h-4 w-4" />
-            </div>
-          </CardHeader>
-          <CardContent className="pl-5">
-            <div className="text-2xl font-bold text-foreground">
-              {((totalEncaisse / (totalEncaisse + totalImpayes)) * 100).toFixed(1)}%
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Sur l'ensemble des frais dus</p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 md:grid-cols-3">
+        <KpiCard title="Total encaissé" value={`${totalEncaisse.toLocaleString()} ${currency || "devise de l'établissement"}`} icon={DollarSign} subtitle={`${paiements.length} règlement(s) validé(s)`} colorVariant="emerald" />
+        <KpiCard title="Impayés en attente" value={`${totalImpayes.toLocaleString()} ${currency || "devise de l'établissement"}`} icon={AlertCircle} subtitle={`${impayes.length} dossier(s) en retard`} colorVariant="rose" />
+        <KpiCard title="Taux de recouvrement" value={`${((totalEncaisse / (totalEncaisse + totalImpayes)) * 100).toFixed(1)}%`} icon={CreditCard} subtitle="Sur l'ensemble des frais dus" colorVariant="primary" />
       </div>
 
       <Tabs defaultValue="paiements" className="space-y-4">

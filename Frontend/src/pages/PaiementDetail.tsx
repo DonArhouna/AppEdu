@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiCard } from "@/components/ui/kpi-card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -162,55 +163,13 @@ const PaiementDetail = () => {
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Montant Encaissé</CardTitle>
-            <CreditCard className="h-4 w-4 text-emerald-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-              {montant.toLocaleString("fr-FR")} {currency || "devise de l'établissement"}
-            </div>
-          </CardContent>
-        </Card>
+        <KpiCard title="Montant encaissé" value={`${montant.toLocaleString("fr-FR")} ${currency || "devise de l'établissement"}`} icon={CreditCard} subtitle="Règlement enregistré" colorVariant="emerald" />
 
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Date de Paiement</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold text-foreground">
-              {paiement.date_paiement
-                ? new Date(paiement.date_paiement).toLocaleDateString("fr-FR")
-                : "-"}
-            </div>
-          </CardContent>
-        </Card>
+        <KpiCard title="Date de paiement" value={paiement.date_paiement ? new Date(paiement.date_paiement).toLocaleDateString("fr-FR") : "—"} icon={Calendar} subtitle="Date de la transaction" colorVariant="sky" />
 
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Mode de Paiement</CardTitle>
-            <CreditCard className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold text-foreground">
-              {paiement.mode_paiement || "Non renseigné"}
-            </div>
-          </CardContent>
-        </Card>
+        <KpiCard title="Mode de paiement" value={paiement.mode_paiement || "Non renseigné"} icon={CreditCard} subtitle="Canal utilisé" colorVariant="primary" />
 
-        <Card className="border-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Statut</CardTitle>
-            <CheckCircle className="h-4 w-4 text-emerald-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl font-bold capitalize text-foreground">
-              {paiement.statut || "Non renseigné"}
-            </div>
-          </CardContent>
-        </Card>
+        <KpiCard title="Statut" value={paiement.statut || "Non renseigné"} icon={CheckCircle} subtitle="État de l'opération" colorVariant="emerald" />
       </div>
 
       {/* Details */}

@@ -72,14 +72,14 @@ const STATUS_LABELS: Record<CandidatureStatus, string> = {
 };
 
 const STATUS_STYLES: Record<CandidatureStatus, string> = {
-  nouvelle: "border-blue-200 bg-blue-50 text-blue-700",
-  en_verification: "border-amber-200 bg-amber-50 text-amber-700",
-  complete: "border-cyan-200 bg-cyan-50 text-cyan-700",
-  acceptee: "border-green-200 bg-green-50 text-green-700",
-  refusee: "border-red-200 bg-red-50 text-red-700",
-  liste_attente: "border-violet-200 bg-violet-50 text-violet-700",
-  converti: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  annulee: "border-gray-200 bg-gray-50 text-gray-600",
+  nouvelle: "border-primary/25 bg-primary/10 text-primary",
+  en_verification: "border-warning/30 bg-warning/10 text-warning-foreground dark:text-warning",
+  complete: "border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  acceptee: "border-success/30 bg-success/10 text-success",
+  refusee: "border-destructive/30 bg-destructive/10 text-destructive",
+  liste_attente: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  converti: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  annulee: "border-muted-foreground/25 bg-muted text-muted-foreground",
 };
 
 const DOCUMENT_LABELS: Record<AdmissionDocumentStatus, string> = {
@@ -90,10 +90,10 @@ const DOCUMENT_LABELS: Record<AdmissionDocumentStatus, string> = {
 };
 
 const DOCUMENT_STYLES: Record<AdmissionDocumentStatus, string> = {
-  requise: "border-gray-200 bg-gray-50 text-gray-600",
-  recue: "border-blue-200 bg-blue-50 text-blue-700",
-  validee: "border-green-200 bg-green-50 text-green-700",
-  rejetee: "border-red-200 bg-red-50 text-red-700",
+  requise: "border-muted-foreground/25 bg-muted text-muted-foreground",
+  recue: "border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  validee: "border-success/30 bg-success/10 text-success",
+  rejetee: "border-destructive/30 bg-destructive/10 text-destructive",
 };
 
 const STATUS_OPTIONS: Array<CandidatureStatus | "tous"> = [
@@ -140,7 +140,12 @@ const DecisionBadge = ({ decision }: { decision: AdmissionDecisionType }) => {
     refusee: "Refusée",
     liste_attente: "Liste d'attente",
   };
-  return <Badge variant="outline">{labels[decision]}</Badge>;
+  const styles: Record<AdmissionDecisionType, string> = {
+    acceptee: "border-success/30 bg-success/10 text-success",
+    refusee: "border-destructive/30 bg-destructive/10 text-destructive",
+    liste_attente: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  };
+  return <Badge variant="outline" className={styles[decision]}>{labels[decision]}</Badge>;
 };
 
 const PAGE_SIZE = 20;
@@ -211,10 +216,8 @@ const Validation = () => {
   }, [loadQueue]);
 
   useEffect(() => {
-    if (initialCandidatureId && initialCandidatureId !== selectedId) {
-      setSelectedId(initialCandidatureId);
-    }
-  }, [initialCandidatureId, selectedId]);
+    setSelectedId(initialCandidatureId);
+  }, [initialCandidatureId]);
 
   useEffect(() => {
     void loadDetail(selectedId);
@@ -408,45 +411,44 @@ const Validation = () => {
         </Alert>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.95fr)]">
+      <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
         <Card className="min-w-0">
-          <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle>File de traitement</CardTitle>
-              <CardDescription>Sélectionnez un dossier pour consulter son circuit.</CardDescription>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="relative sm:w-64">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                    setPage(1);
-                  }}
-                  placeholder="Rechercher"
-                  className="pl-9"
-                  aria-label="Rechercher un dossier"
-                />
-              </div>
-              <Select value={statusFilter} onValueChange={(value) => {
-                setStatusFilter(value as CandidatureStatus | "tous");
-                setPage(1);
-              }}>
-                <SelectTrigger className="sm:w-48" aria-label="Filtrer les dossiers par statut">
-                  <SelectValue placeholder="Tous les statuts" />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {status === "tous" ? "Tous les statuts" : STATUS_LABELS[status]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <CardHeader>
+            <CardTitle>File de traitement</CardTitle>
+            <CardDescription>Sélectionnez un dossier pour consulter son circuit.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <div className="flex flex-col gap-3 border-y bg-muted/20 px-5 py-3 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 flex-1 sm:max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Rechercher un dossier"
+                className="pl-9"
+                aria-label="Rechercher un dossier"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={(value) => {
+              setStatusFilter(value as CandidatureStatus | "tous");
+              setPage(1);
+            }}>
+              <SelectTrigger className="w-full sm:w-56" aria-label="Filtrer les dossiers par statut">
+                <SelectValue placeholder="Tous les statuts" />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {status === "tous" ? "Tous les statuts" : STATUS_LABELS[status]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-xs text-muted-foreground sm:ml-auto">{total} dossier(s)</span>
+          </div>
+          <CardContent className="pt-4">
             {loading ? (
               <div className="flex min-h-56 items-center justify-center gap-2 text-sm text-muted-foreground">
                 <LoaderCircle className="h-5 w-5 animate-spin" /> Chargement de la file...
@@ -461,7 +463,7 @@ const Validation = () => {
               </div>
             ) : (
               <div className="rounded-xl border">
-                <Table>
+                <Table className="min-w-[720px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Candidat</TableHead>
@@ -502,7 +504,7 @@ const Validation = () => {
             {totalPages > 1 && (
               <div className="mt-4 flex items-center justify-between gap-3 border-t pt-4">
                 <p className="text-sm text-muted-foreground">
-                  Page {page} sur {totalPages} · {total} dossier(s)
+                  Page {page} sur {totalPages}
                 </p>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1 || loading}>
@@ -597,13 +599,13 @@ const Validation = () => {
                             <p className="truncate text-xs text-muted-foreground">{document.fichier_disponible ? (document.nom_fichier || "Fichier stocké") : "Aucun fichier joint"}</p>
                             {document.commentaire && <p className="mt-1 text-xs text-muted-foreground">{document.commentaire}</p>}
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
                             <Select
                               value={document.statut}
                               onValueChange={(value) => void handleDocumentStatus(document, value)}
                               disabled={busyAction !== null || ["converti", "annulee"].includes(selected.statut)}
                             >
-                              <SelectTrigger className="w-36" aria-label={`Statut de ${document.type}`}><SelectValue /></SelectTrigger>
+                              <SelectTrigger className="w-full sm:w-36" aria-label={`Statut de ${document.type}`}><SelectValue /></SelectTrigger>
                               <SelectContent>
                                 {Object.entries(DOCUMENT_LABELS).map(([value, label]) => (
                                   <SelectItem key={value} value={value}>{label}</SelectItem>
@@ -714,11 +716,11 @@ const Validation = () => {
                 )}
 
                 {canConvert && (
-                  <section className="rounded-lg border border-green-200 bg-green-50 p-4" aria-labelledby="convert-title">
+                  <section className="rounded-lg border border-success/30 bg-success/5 p-4" aria-labelledby="convert-title">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <h3 id="convert-title" className="flex items-center gap-2 font-semibold text-green-800"><UserCheck className="h-4 w-4" /> Convertir en dossier étudiant</h3>
-                        <p className="mt-1 text-sm text-green-800/80">La conversion créera un dossier étudiant sans créer de compte ni définir de mot de passe.</p>
+                        <h3 id="convert-title" className="flex items-center gap-2 font-semibold text-success"><UserCheck className="h-4 w-4" /> Convertir en dossier étudiant</h3>
+                        <p className="mt-1 text-sm text-muted-foreground">La conversion créera un dossier étudiant sans créer de compte ni définir de mot de passe.</p>
                       </div>
                       <Button onClick={() => setConversionDialogOpen(true)} disabled={busyAction !== null}>
                         {busyAction === "convert" ? <LoaderCircle className="animate-spin" /> : <UserCheck />}

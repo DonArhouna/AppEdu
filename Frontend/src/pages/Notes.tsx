@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { etudiantsApi, pedagogieApi, sessionsApi, structureApi, extractErrorMessage } from "@/services/apiClient";
+import { pedagogieApi, sessionsApi, structureApi, extractErrorMessage } from "@/services/apiClient";
 import type { Note as NoteApi } from "@/services/apiTypes";
 
 interface StudentOption {
@@ -37,25 +37,26 @@ const Notes = () => {
   const [selectedSession, setSelectedSession] = useState("");
   const [rows, setRows] = useState<NoteRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rowsLoading, setRowsLoading] = useState(false);
+  const [catalogVersion, setCatalogVersion] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadCatalogs = async () => {
     setLoading(true);
     setError(null);
-    const [studentResult, matiereResult, sessionResult] = await Promise.all([
-      etudiantsApi.getAll(),
+    const [matiereResult, sessionResult] = await Promise.all([
       structureApi.getMatieres(),
       sessionsApi.getAll(),
     ]);
-    if (studentResult.error || matiereResult.error || sessionResult.error) {
-      setError(extractErrorMessage(studentResult.error || matiereResult.error || sessionResult.error));
-      setStudents([]); setMatieres([]); setSessions([]);
+    if (matiereResult.error || sessionResult.error) {
+      setError(extractErrorMessage(matiereResult.error || sessionResult.error));
+      setMatieres([]); setSessions([]);
     } else {
-      setStudents((studentResult.data || []) as StudentOption[]);
       setMatieres((matiereResult.data || []) as MatiereOption[]);
       setSessions((sessionResult.data || []) as SessionOption[]);
     }
+    setCatalogVersion((version) => version + 1);
     setLoading(false);
   };
 
@@ -63,17 +64,29 @@ const Notes = () => {
 
   useEffect(() => {
     if (!selectedMatiere || !selectedSession) {
+      setStudents([]);
       setRows([]);
       return;
     }
-    const loadNotes = async () => {
-      const result = await pedagogieApi.getNotes({ matiere_id: selectedMatiere, session_id: selectedSession });
-      if (result.error) {
-        toast.error(result.error);
+    const loadRows = async () => {
+      setRowsLoading(true);
+      const [studentsResult, notesResult] = await Promise.all([
+        pedagogieApi.getAssignedStudents(selectedMatiere, selectedSession),
+        pedagogieApi.getNotes({ matiere_id: selectedMatiere, session_id: selectedSession }),
+      ]);
+      if (studentsResult.error || notesResult.error) {
+        toast.error(extractErrorMessage(studentsResult.error || notesResult.error));
+        setStudents([]);
+        setRows([]);
+        setRowsLoading(false);
         return;
       }
-      const noteMap = new Map<string, NoteApi>((result.data || []).map((note) => [note.etudiant_id, note]));
-      const sessionStudents = students.filter((student) => student.session_id === selectedSession);
+
+      const sessionStudents = (studentsResult.data || []) as StudentOption[];
+      const noteMap = new Map<string, NoteApi>(
+        (notesResult.data || []).map((note) => [note.etudiant_id, note])
+      );
+      setStudents(sessionStudents);
       setRows(sessionStudents.map((student) => {
         const note = noteMap.get(student.id);
         return {
@@ -84,9 +97,10 @@ const Notes = () => {
           saved: Boolean(note),
         };
       }));
+      setRowsLoading(false);
     };
-    void loadNotes();
-  }, [selectedMatiere, selectedSession, students]);
+    void loadRows();
+  }, [selectedMatiere, selectedSession, catalogVersion]);
 
   const average = useMemo(() => {
     const valid = rows.map((row) => ({ value: Number(row.valeur), coefficient: Number(row.coefficient) })).filter((row) => Number.isFinite(row.value) && row.value >= 0 && row.value <= 20 && row.coefficient > 0);
@@ -156,7 +170,7 @@ const Notes = () => {
           <form onSubmit={saveNotes}>
             <div className="overflow-x-auto border-t">
               <Table><TableHeader><TableRow className="bg-muted/50"><TableHead>Matricule</TableHead><TableHead>Étudiant</TableHead><TableHead>Note / 20</TableHead><TableHead>Coefficient</TableHead><TableHead>Statut</TableHead></TableRow></TableHeader>
-                <TableBody>{loading ? <TableRow><TableCell colSpan={5} className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></TableCell></TableRow> : rows.length === 0 ? <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">Aucun étudiant rattaché à cette session.</TableCell></TableRow> : rows.map((row) => { const student = students.find((item) => item.id === row.etudiant_id); return <TableRow key={row.etudiant_id}>
+                <TableBody>{rowsLoading ? <TableRow><TableCell colSpan={5} className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></TableCell></TableRow> : rows.length === 0 ? <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">Aucun étudiant rattaché à cette session.</TableCell></TableRow> : rows.map((row) => { const student = students.find((item) => item.id === row.etudiant_id); return <TableRow key={row.etudiant_id}>
                   <TableCell className="font-mono text-xs">{student?.matricule}</TableCell><TableCell className="font-medium">{student?.prenom} {student?.nom}</TableCell>
                   <TableCell><Input aria-label={`Note de ${student?.matricule}`} type="number" min="0" max="20" step="0.25" value={row.valeur} onChange={(event) => updateRow(row.etudiant_id, "valeur", event.target.value)} className="w-28" /></TableCell>
                   <TableCell><Input aria-label={`Coefficient de ${student?.matricule}`} type="number" min="0.1" step="0.5" value={row.coefficient} onChange={(event) => updateRow(row.etudiant_id, "coefficient", event.target.value)} className="w-24" /></TableCell>

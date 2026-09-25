@@ -30,6 +30,7 @@ interface UserDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   userToEdit?: EditableUser;
+  protectAdminAccess?: boolean;
   onSave: (data: UserFormData) => Promise<void> | void;
 }
 
@@ -44,7 +45,7 @@ const emptyForm: UserFormData = {
   password: "",
 };
 
-export const UserDialog = ({ open, onOpenChange, userToEdit, onSave }: UserDialogProps) => {
+export const UserDialog = ({ open, onOpenChange, userToEdit, protectAdminAccess = false, onSave }: UserDialogProps) => {
   const [formData, setFormData] = useState<UserFormData>(emptyForm);
   const [students, setStudents] = useState<Student[]>([]);
   const [saving, setSaving] = useState(false);
@@ -100,7 +101,7 @@ export const UserDialog = ({ open, onOpenChange, userToEdit, onSave }: UserDialo
         <DialogHeader>
           <DialogTitle>{userToEdit ? "Modifier l'utilisateur" : "Créer un utilisateur"}</DialogTitle>
           <DialogDescription>
-            Les données et permissions sont enregistrées par le backend.
+            L'identité, le rôle statique et le statut sont enregistrés par le backend.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
@@ -111,7 +112,7 @@ export const UserDialog = ({ open, onOpenChange, userToEdit, onSave }: UserDialo
           <div className="space-y-2"><Label htmlFor="user-email">Email *</Label><Input id="user-email" type="email" required value={formData.email} onChange={(event) => setFormData({ ...formData, email: event.target.value })} disabled={Boolean(userToEdit)} /></div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2"><Label htmlFor="user-telephone">Téléphone</Label><Input id="user-telephone" value={formData.telephone} onChange={(event) => setFormData({ ...formData, telephone: event.target.value })} /></div>
-            <div className="space-y-2"><Label htmlFor="user-role">Rôle *</Label><Select value={formData.role} onValueChange={(value) => setFormData({ ...formData, role: value })}><SelectTrigger id="user-role"><SelectValue /></SelectTrigger><SelectContent>
+            <div className="space-y-2"><Label htmlFor="user-role">Rôle *</Label><Select value={formData.role} onValueChange={(value) => setFormData({ ...formData, role: value })}><SelectTrigger id="user-role" disabled={protectAdminAccess}><SelectValue /></SelectTrigger><SelectContent>
               <SelectItem value="ADMIN">Administrateur</SelectItem><SelectItem value="DIRECTEUR_ETUDES">Directeur des études</SelectItem><SelectItem value="SECRETARIAT">Secrétariat</SelectItem><SelectItem value="COMPTABILITE">Comptabilité</SelectItem><SelectItem value="ENSEIGNANT">Enseignant</SelectItem><SelectItem value="ETUDIANT">Étudiant</SelectItem>
             </SelectContent></Select></div>
           </div>
@@ -139,7 +140,7 @@ export const UserDialog = ({ open, onOpenChange, userToEdit, onSave }: UserDialo
                </p>
              </div>
            )}
-           <div className="space-y-2"><Label htmlFor="user-status">Statut</Label><Select value={formData.is_active ? "active" : "inactive"} onValueChange={(value) => setFormData({ ...formData, is_active: value === "active" })}><SelectTrigger id="user-status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Actif</SelectItem><SelectItem value="inactive">Inactif</SelectItem></SelectContent></Select></div>
+           <div className="space-y-2"><Label htmlFor="user-status">Statut</Label><Select value={formData.is_active ? "active" : "inactive"} onValueChange={(value) => setFormData({ ...formData, is_active: value === "active" })}><SelectTrigger id="user-status" disabled={protectAdminAccess}><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Actif</SelectItem><SelectItem value="inactive">Inactif</SelectItem></SelectContent></Select>{protectAdminAccess && <p className="text-xs text-amber-600 dark:text-amber-400">Le dernier administrateur actif doit conserver son rôle et son accès.</p>}</div>
           <div className="space-y-2"><Label htmlFor="user-password">{userToEdit ? "Nouveau mot de passe (optionnel)" : "Mot de passe *"}</Label><Input id="user-password" type="password" minLength={userToEdit ? 0 : 8} required={!userToEdit} value={formData.password} onChange={(event) => setFormData({ ...formData, password: event.target.value })} /></div>
           <div className="flex justify-end gap-3 border-t pt-4"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Annuler</Button><Button type="submit" disabled={saving}>{saving ? "Enregistrement..." : userToEdit ? "Enregistrer" : "Créer"}</Button></div>
         </form>

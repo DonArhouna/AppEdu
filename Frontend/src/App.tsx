@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { PageLoader } from "@/components/ui/page-loader";
 
@@ -11,6 +11,7 @@ import { PageLoader } from "@/components/ui/page-loader";
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const PreInscription = lazy(() => import("./pages/PreInscription"));
 const Etudiants = lazy(() => import("./pages/Etudiants"));
+const EtudiantImport = lazy(() => import("./pages/EtudiantImport"));
 const StudentDetail = lazy(() => import("./pages/StudentDetail"));
 const Validation = lazy(() => import("./pages/Validation"));
 const Promotions = lazy(() => import("./pages/Promotions"));
@@ -20,6 +21,7 @@ const Departements = lazy(() => import("./pages/Departements"));
 const DepartementDetail = lazy(() => import("./pages/DepartementDetail"));
 const Filieres = lazy(() => import("./pages/Filieres"));
 const FiliereDetail = lazy(() => import("./pages/FiliereDetail"));
+const AcademicStructure = lazy(() => import("./pages/AcademicStructure"));
 const Campus = lazy(() => import("./pages/Campus"));
 const CampusDetail = lazy(() => import("./pages/CampusDetail"));
 const Sites = lazy(() => import("./pages/Sites"));
@@ -43,7 +45,6 @@ const Paiements = lazy(() => import("./pages/Paiements"));
 const PaiementDetail = lazy(() => import("./pages/PaiementDetail"));
 const ReportingFinancier = lazy(() => import("./pages/ReportingFinancier"));
 const EspaceEtudiant = lazy(() => import("./pages/EspaceEtudiant"));
-const Messagerie = lazy(() => import("./pages/Messagerie"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const RolesPermissions = lazy(() => import("./pages/RolesPermissions"));
 const Parametrage = lazy(() => import("./pages/Parametrage"));
@@ -59,7 +60,7 @@ const SetupWizard = lazy(() => import("./pages/SetupWizard"));
 const Deconnexion = lazy(() => import("./pages/Deconnexion"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { RBACProvider, type UserRole } from "@/contexts/RBACContext";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 
@@ -67,6 +68,21 @@ const queryClient = new QueryClient();
 
 const academicStructureRoles: UserRole[] = ["ADMIN", "DIRECTEUR_ETUDES"];
 const pedagogyRoles: UserRole[] = ["ADMIN", "DIRECTEUR_ETUDES", "ENSEIGNANT"];
+
+const RoleHome = () => {
+  const { user } = useAuth();
+  if (!user) return <PageLoader />;
+  if (user.role === "ADMIN") return <Dashboard />;
+
+  const destination: Record<Exclude<UserRole, "ADMIN">, string> = {
+    DIRECTEUR_ETUDES: "/etudiants",
+    SECRETARIAT: "/etudiants",
+    COMPTABILITE: "/paiements",
+    ENSEIGNANT: "/portail-enseignant",
+    ETUDIANT: "/espace-etudiant",
+  };
+  return <Navigate to={destination[user.role]} replace />;
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -92,13 +108,13 @@ const App = () => (
                   <MainLayout>
                     <Routes>
                     {/* Dashboard Global */}
-                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/" element={<RoleHome />} />
 
                     {/* Module 1: Scolarité & Admissions */}
                     <Route
                       path="/pre-inscription"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN", "SECRETARIAT", "DIRECTEUR_ETUDES"]}>
+                        <ProtectedRoute requiredPermission="admissions.read">
                           <PreInscription />
                         </ProtectedRoute>
                       }
@@ -106,15 +122,26 @@ const App = () => (
                     <Route
                        path="/etudiants"
                        element={
-                         <ProtectedRoute allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "SECRETARIAT", "COMPTABILITE", "ENSEIGNANT"]}>
+                         <ProtectedRoute requiredPermission="students.read">
                            <Etudiants />
                          </ProtectedRoute>
                        }
                      />
                     <Route
+                       path="/etudiants/import"
+                       element={
+                         <ProtectedRoute
+                           allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "SECRETARIAT"]}
+                           requiredPermission="students.write"
+                         >
+                           <EtudiantImport />
+                         </ProtectedRoute>
+                       }
+                    />
+                    <Route
                        path="/etudiants/:id"
                        element={
-                         <ProtectedRoute allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "SECRETARIAT", "COMPTABILITE", "ENSEIGNANT"]}>
+                         <ProtectedRoute requiredPermission="students.read">
                            <StudentDetail />
                          </ProtectedRoute>
                        }
@@ -122,35 +149,36 @@ const App = () => (
                     <Route
                       path="/validation"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN", "SECRETARIAT", "DIRECTEUR_ETUDES"]}>
+                        <ProtectedRoute requiredPermission="admissions.read">
                           <Validation />
                         </ProtectedRoute>
                       }
                     />
 
                     {/* Module 2: Gestion Pédagogique */}
-                    <Route path="/filieres" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Filieres /></ProtectedRoute>} />
-                    <Route path="/filieres/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><FiliereDetail /></ProtectedRoute>} />
-                    <Route path="/matieres" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Matieres /></ProtectedRoute>} />
-                    <Route path="/matieres/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><MatiereDetail /></ProtectedRoute>} />
-                    <Route path="/ue" element={<ProtectedRoute allowedRoles={academicStructureRoles}><UnitesEnseignement /></ProtectedRoute>} />
-                    <Route path="/ue/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><UEDetail /></ProtectedRoute>} />
-                    <Route path="/emplois-du-temps" element={<ProtectedRoute allowedRoles={pedagogyRoles}><EmploisDuTemps /></ProtectedRoute>} />
+                    <Route path="/filieres" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><Filieres /></ProtectedRoute>} />
+                    <Route path="/filieres/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><FiliereDetail /></ProtectedRoute>} />
+                     <Route path="/academic-structure" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><AcademicStructure /></ProtectedRoute>} />
+                    <Route path="/matieres" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><Matieres /></ProtectedRoute>} />
+                    <Route path="/matieres/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><MatiereDetail /></ProtectedRoute>} />
+                    <Route path="/ue" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><UnitesEnseignement /></ProtectedRoute>} />
+                    <Route path="/ue/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><UEDetail /></ProtectedRoute>} />
+                    <Route path="/emplois-du-temps" element={<ProtectedRoute allowedRoles={pedagogyRoles} requiredPermission="pedagogy.read"><EmploisDuTemps /></ProtectedRoute>} />
                     <Route
                       path="/notes"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "ENSEIGNANT"]}>
+                        <ProtectedRoute allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "ENSEIGNANT"]} requiredPermission="pedagogy.read">
                           <Notes />
                         </ProtectedRoute>
                       }
                     />
-                    <Route path="/ressources" element={<ProtectedRoute allowedRoles={pedagogyRoles}><Ressources /></ProtectedRoute>} />
-                    <Route path="/absences" element={<ProtectedRoute allowedRoles={pedagogyRoles}><Absences /></ProtectedRoute>} />
+                    <Route path="/ressources" element={<ProtectedRoute allowedRoles={pedagogyRoles} requiredPermission="pedagogy.read"><Ressources /></ProtectedRoute>} />
+                    <Route path="/absences" element={<ProtectedRoute allowedRoles={pedagogyRoles} requiredPermission="pedagogy.read"><Absences /></ProtectedRoute>} />
 
                     {/* Module 3: RH & Enseignants */}
-                    <Route path="/enseignants" element={<ProtectedRoute allowedRoles={["ADMIN", "SECRETARIAT"]}><Enseignants /></ProtectedRoute>} />
-                    <Route path="/personnel" element={<ProtectedRoute allowedRoles={["ADMIN", "SECRETARIAT"]}><Personnel /></ProtectedRoute>} />
-                    <Route path="/personnel/:id" element={<ProtectedRoute allowedRoles={["ADMIN", "SECRETARIAT"]}><PersonnelDetail /></ProtectedRoute>} />
+                    <Route path="/enseignants" element={<ProtectedRoute allowedRoles={["ADMIN", "SECRETARIAT"]} requiredPermission="users.manage"><Enseignants /></ProtectedRoute>} />
+                    <Route path="/personnel" element={<ProtectedRoute allowedRoles={["ADMIN", "SECRETARIAT"]} requiredPermission="users.manage"><Personnel /></ProtectedRoute>} />
+                    <Route path="/personnel/:id" element={<ProtectedRoute allowedRoles={["ADMIN", "SECRETARIAT"]} requiredPermission="users.manage"><PersonnelDetail /></ProtectedRoute>} />
                     <Route
                        path="/portail-enseignant"
                        element={
@@ -164,7 +192,7 @@ const App = () => (
                     <Route
                       path="/frais-scolarite"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN", "COMPTABILITE"]}>
+                        <ProtectedRoute requiredPermission="finance.read">
                           <FraisScolarite />
                         </ProtectedRoute>
                       }
@@ -172,7 +200,7 @@ const App = () => (
                     <Route
                       path="/factures"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN", "COMPTABILITE"]}>
+                        <ProtectedRoute requiredPermission="finance.read">
                           <Factures />
                         </ProtectedRoute>
                       }
@@ -180,7 +208,7 @@ const App = () => (
                     <Route
                       path="/factures/:id"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN", "COMPTABILITE"]}>
+                        <ProtectedRoute requiredPermission="finance.read">
                           <FactureDetail />
                         </ProtectedRoute>
                       }
@@ -188,7 +216,7 @@ const App = () => (
                     <Route
                       path="/paiements"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN", "COMPTABILITE"]}>
+                        <ProtectedRoute requiredPermission="finance.read">
                           <Paiements />
                         </ProtectedRoute>
                       }
@@ -196,7 +224,7 @@ const App = () => (
                     <Route
                       path="/paiements/:id"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN", "COMPTABILITE"]}>
+                        <ProtectedRoute requiredPermission="finance.read">
                           <PaiementDetail />
                         </ProtectedRoute>
                       }
@@ -204,13 +232,13 @@ const App = () => (
                     <Route
                       path="/reporting-financier"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN", "COMPTABILITE"]}>
+                        <ProtectedRoute requiredPermission="finance.read">
                           <ReportingFinancier />
                         </ProtectedRoute>
                       }
                     />
 
-                    {/* Module 5: Espace Étudiant & Messagerie */}
+                    {/* Module 5 : Espace Étudiant */}
                     <Route
                        path="/espace-etudiant"
                        element={
@@ -219,16 +247,15 @@ const App = () => (
                          </ProtectedRoute>
                        }
                      />
-                    <Route path="/messagerie" element={<Messagerie />} />
 
                     {/* Module 6: Analytics & BI */}
-                    <Route path="/analytics" element={<ProtectedRoute allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "COMPTABILITE"]}><Analytics /></ProtectedRoute>} />
+                    <Route path="/analytics" element={<ProtectedRoute allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "COMPTABILITE"]} requiredPermission="academic.read"><Analytics /></ProtectedRoute>} />
 
                     {/* Module 7: Paramètres & Structure (Administration) */}
                     <Route
                       path="/utilisateurs"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN"]}>
+                        <ProtectedRoute allowedRoles={["ADMIN"]} requiredPermission="users.manage">
                           <Utilisateurs />
                         </ProtectedRoute>
                       }
@@ -236,25 +263,25 @@ const App = () => (
                     <Route
                       path="/journal-audit"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN"]}>
+                        <ProtectedRoute requiredPermission="audit.read">
                           <JournalAudit />
                         </ProtectedRoute>
                       }
                     />
-                    <Route path="/campus" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Campus /></ProtectedRoute>} />
-                    <Route path="/campus/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><CampusDetail /></ProtectedRoute>} />
-                    <Route path="/sites" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Sites /></ProtectedRoute>} />
-                    <Route path="/sites/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><SiteDetail /></ProtectedRoute>} />
-                    <Route path="/salles" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Salles /></ProtectedRoute>} />
-                    <Route path="/salles/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><SalleDetail /></ProtectedRoute>} />
-                    <Route path="/departements" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Departements /></ProtectedRoute>} />
-                    <Route path="/departements/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><DepartementDetail /></ProtectedRoute>} />
-                    <Route path="/promotions" element={<ProtectedRoute allowedRoles={academicStructureRoles}><Promotions /></ProtectedRoute>} />
-                    <Route path="/promotions/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles}><PromotionDetail /></ProtectedRoute>} />
+                    <Route path="/campus" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><Campus /></ProtectedRoute>} />
+                    <Route path="/campus/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><CampusDetail /></ProtectedRoute>} />
+                    <Route path="/sites" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><Sites /></ProtectedRoute>} />
+                    <Route path="/sites/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><SiteDetail /></ProtectedRoute>} />
+                    <Route path="/salles" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><Salles /></ProtectedRoute>} />
+                    <Route path="/salles/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><SalleDetail /></ProtectedRoute>} />
+                    <Route path="/departements" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><Departements /></ProtectedRoute>} />
+                    <Route path="/departements/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><DepartementDetail /></ProtectedRoute>} />
+                    <Route path="/promotions" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><Promotions /></ProtectedRoute>} />
+                    <Route path="/promotions/:id" element={<ProtectedRoute allowedRoles={academicStructureRoles} requiredPermission="academic.read"><PromotionDetail /></ProtectedRoute>} />
                     <Route
                       path="/sessions"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "COMPTABILITE"]}>
+                        <ProtectedRoute allowedRoles={["ADMIN", "DIRECTEUR_ETUDES", "COMPTABILITE"]} requiredPermission="academic.read">
                           <SessionsConfig />
                         </ProtectedRoute>
                       }
@@ -262,7 +289,7 @@ const App = () => (
                     <Route
                       path="/roles-permissions"
                       element={
-                        <ProtectedRoute allowedRoles={["ADMIN"]}>
+                        <ProtectedRoute requiredPermission="roles.manage">
                           <RolesPermissions />
                         </ProtectedRoute>
                       }

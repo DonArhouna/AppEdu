@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, require_admissions
+from app.api.deps import get_db, require_admissions_read, require_admissions_write
 from app.models.admission_views import VueAdmissions
 from app.models.utilisateur import Utilisateur
 from app.schemas.admissions import (
@@ -44,7 +44,7 @@ async def _get_owned_view(
 )
 async def list_admission_views(
     db: AsyncSession = Depends(get_db),
-    current_user: Utilisateur = Depends(require_admissions),
+    current_user: Utilisateur = Depends(require_admissions_read),
 ):
     result = await db.execute(
         select(VueAdmissions)
@@ -63,7 +63,7 @@ async def list_admission_views(
 async def create_admission_view(
     payload: VueAdmissionsCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: Utilisateur = Depends(require_admissions),
+    current_user: Utilisateur = Depends(require_admissions_write),
 ):
     existing = await db.execute(
         select(VueAdmissions.id).where(
@@ -104,7 +104,7 @@ async def update_admission_view(
     view_id: str,
     payload: VueAdmissionsUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: Utilisateur = Depends(require_admissions),
+    current_user: Utilisateur = Depends(require_admissions_write),
 ):
     view = await _get_owned_view(db, view_id, current_user.id)
     data = payload.model_dump(mode="json", exclude_unset=True)
@@ -153,7 +153,7 @@ async def update_admission_view(
 async def delete_admission_view(
     view_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: Utilisateur = Depends(require_admissions),
+    current_user: Utilisateur = Depends(require_admissions_write),
 ):
     view = await _get_owned_view(db, view_id, current_user.id)
     await db.delete(view)

@@ -5,7 +5,7 @@ Rattaché optionnellement à une Filière et à une Session Académique.
 """
 
 from datetime import date
-from typing import Optional
+from typing import List, Optional
 from sqlalchemy import String, Date, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
@@ -41,8 +41,25 @@ class Etudiant(Base, TimestampMixin):
         nullable=True,
         index=True
     )
+
+    # Rattachement canonique à une Classe.  Cette colonne est volontairement
+    # nullable : les anciennes fiches restent lisibles et ne sont pas
+    # rétro-architecturées par la migration.
+    classe_id: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        ForeignKey("classes.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+
     session: Mapped[Optional["SessionAcademique"]] = relationship("SessionAcademique", lazy="selectin")
     filiere_obj: Mapped[Optional["Filiere"]] = relationship("Filiere", lazy="selectin")
+    classe: Mapped[Optional["Classe"]] = relationship("Classe", lazy="selectin")
+    inscriptions: Mapped[List["Inscription"]] = relationship(
+        "Inscription",
+        back_populates="etudiant",
+        lazy="selectin",
+    )
 
     def __repr__(self) -> str:
         return f"<Etudiant matricule='{self.matricule}' nom='{self.nom}' prenom='{self.prenom}'>"
