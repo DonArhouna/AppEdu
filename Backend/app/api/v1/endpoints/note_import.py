@@ -130,6 +130,21 @@ async def analyser_fichier(
     classe_id: str = Form(..., description="Promotion concernée."),
     matiere_id: str = Form(..., description="Matière concernée."),
     session_id: str = Form(..., description="Session concernée."),
+    semestre_id: Optional[str] = Form(
+        None,
+        description=(
+            "Semestre auquel les notes se rattachent. Obligatoire en pratique "
+            "pour un enseignement annuel, noté sur chaque semestre."
+        ),
+    ),
+    rattrapage: bool = Form(
+        False,
+        description=(
+            "Import de rattrapage : les notes **remplacent** la première "
+            "tentative sur cette matière et ce semestre, elles ne s'y ajoutent "
+            "pas."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     _auth: Utilisateur = Depends(require_notes_write),
 ):
@@ -140,7 +155,22 @@ async def analyser_fichier(
     a affecter des notes a la mauvaise matiere.
 
     Le coefficient par defaut vient de la **matiere**, il n'est pas demande.
+
+    Le semestre et le caractere rattrapage sont **renvoyes dans le rapport** : la
+    validation s'en sert, et elle ne peut donc rien faire que l'analyse n'ait
+    pas montre. Un rapport sans semestre ne produit pas des notes sans
+    semestre — c'est le meme contrat que pour les notes elles-memes.
     """
+
+    if rattrapage and not semestre_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Un import de rattrapage doit préciser le semestre. Sans lui, "
+                "les notes remplaceraient une première tentative qu'on ne "
+                "saurait pas laquelle."
+            ),
+        )
 
     raw = await fichier.read()
     try:
@@ -155,7 +185,12 @@ async def analyser_fichier(
     except (ImportFormatInvalide, ImportNotesInvalide) as exc:
         raise _erreur(exc) from exc
 
-    return _rapport_vers_reponse(rapport)
+    reponse = _rapport_vers_reponse(rapport)
+    # Le contexte est porte par le **modele**, pas ajoute apres coup : la
+    # reponse doit le declarer, sinon un client qui ignore ce champ ne saurait
+    # pas qu'il existe.
+    reponse.contexte = {"semestre_id": semestre_id, "rattrapage": rattrapage}
+    return reponse
 
 
 @router.post(
@@ -174,6 +209,11 @@ async def valider_import(
     Le serveur ne relit pas le fichier : il ecrit ce que le rapport a annonce.
     C'est ce qui garantit que l'ecran ne montre jamais autre chose que ce qu'il
     enregistre.
+
+    Le bloc ``import`` du rapport porte le semestre et le caractere
+    ``rattrapage`` de l'import. Les deux sont **repris tels quels**, jamais
+    devines : un rattrapage declenche le remplacement des notes precedentes, et
+    l'agent doit l'avoir vu avant de confirmer.
     """
 
     lignes = rapport.get("lignes") or []
@@ -240,12 +280,19 @@ async def valider_import(
         if ligne.matricule and not ligne.ignoree and not ligne.erreurs:
             ligne.etudiant = par_matricule.get(ligne.matricule.lower())
 
+    # Le contexte de l'import — semestre, caractere rattrapage — est **dans** le
+    # rapport, pas dans un second corps de requete. C'est le rapport qui est le
+    # contrat : l'agent a vu le semestre et le caractere rattrapage dans
+    # l'analyse, et la validation ne peut donc faire que ce qui a ete montre.
+    contexte = rapport.get("contexte") or {}
     try:
         bilan = await service.valider(
             db,
             rapport=reconstruite,
             matiere_id=matiere_id,
             session_id=session_id,
+            semestre_id=contexte.get("semestre_id") or None,
+            rattrapage=bool(contexte.get("rattrapage")),
         )
     except ImportNotesInvalide as exc:
         await db.rollback()

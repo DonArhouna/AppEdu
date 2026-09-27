@@ -291,7 +291,48 @@ async def _run() -> None:
         )
         assert rapport["importable"] is True, rapport
         assert rapport["resume"]["total_notes"] == 3, rapport["resume"]
-        print("  [OK] L'analyse n'ecrit aucune note.")
+        # Le rapport porte le contexte. C'est lui qui rend la validation
+        # incapable de faire autre chose que ce que l'agent a vu : sans
+        # semestre dans le rapport, la validation ecrirait des notes sans
+        # semestre en paraissant avoir suivi l'analyse.
+        assert rapport["contexte"] == {"semestre_id": None, "rattrapage": False}, (
+            rapport["contexte"]
+        )
+        print("  [OK] L'analyse n'ecrit aucune note, et porte le contexte de l'import.")
+
+        # ------------------------------------------------------------------
+        # 2 bis. Le rattrapage declare, refuse sans semestre
+        # ------------------------------------------------------------------
+        # Un rattrapage remplace la premiere tentative. Sans semestre, on ne
+        # saurait pas laquelle remplacer — donc c'est refuse, pas devine.
+        sans_semestre = await _analyser(fichier, rattrapage="true")
+        assert sans_semestre.status_code == 422, sans_semestre.text
+        assert "semestre" in sans_semestre.json()["detail"].lower(), (
+            sans_semestre.json()
+        )
+
+        # Avec un semestre, l'analyse accepte et **renvoie** le contexte : c'est
+        # lui que la validation relira.
+        semestres = (
+            await client.get(
+                "/api/v1/academic/semestres/repartition",
+                params={"session_id": session["id"]},
+                headers=admin,
+            )
+        ).json()["semestres"]
+        assert semestres, "La session doit porter des semestres."
+        s1 = semestres[0]
+
+        avec_semestre = await _analyser(
+            fichier, semestre_id=s1["id"], rattrapage="true"
+        )
+        assert avec_semestre.status_code == 200, avec_semestre.text
+        rapport_rat = avec_semestre.json()
+        assert rapport_rat["contexte"] == {
+            "semestre_id": s1["id"],
+            "rattrapage": True,
+        }, rapport_rat["contexte"]
+        print("  [OK] Rattrapage : refuse sans semestre, renvoie le contexte quand il y en a un.")
 
         # ------------------------------------------------------------------
         # 3. Les colonnes deviennent des evaluations

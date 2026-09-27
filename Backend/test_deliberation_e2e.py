@@ -441,6 +441,102 @@ async def _run() -> None:
             headers=admin,
         )
         assert rattrapage.status_code == 201, rattrapage.text
+        rattrapage_etudiant = elimine["id"]
+
+        # ------------------------------------------------------------------
+        # 6c. Decisions du jury, unite par unite
+        # ------------------------------------------------------------------
+        # C'est l'ecrit qui manquait entre la proposition du moteur et le
+        # bulletin. Trois etats : validee, validee en rattrapage, a reprendre.
+        moyennes = rattrapage.json()["moyennes_ue"]
+        assert moyennes, "La decision doit porter les moyennes par UE."
+
+        # La proposition du moteur est stockee, et elle n'est pas une decision.
+        premiere = next(iter(moyennes.values()))
+        assert premiere.get("proposition_validation") in (
+            "Validée", "À reprendre"
+        ), premiere
+        assert "validation" not in premiere or premiere.get("validation") is None, (
+            f"Une UE porte une decision avant que le jury ait tranche : "
+            f"{premiere.get('validation')!r}"
+        )
+
+        ue_ids = list(moyennes)
+        # Une UE inconnue est refusee : un typo enregistrerait une decision
+        # dans le vide, et le bulletin n'afficherait rien.
+        inconnue = await client.put(
+            f"/api/v1/deliberation/{seance_id}/decisions/{rattrapage_etudiant}/unites",
+            json={"decisions": [{"ue_id": "ue-inexistante", "validation": "Validée"}]},
+            headers=admin,
+        )
+        assert inconnue.status_code == 422, inconnue.text
+        assert "inexistante" in inconnue.json()["detail"], inconnue.json()
+
+        # Hors des trois etats : refuse par le schema, avant d'atteindre la base.
+        hors_etats = await client.put(
+            f"/api/v1/deliberation/{seance_id}/decisions/{rattrapage_etudiant}/unites",
+            json={"decisions": [{"ue_id": ue_ids[0], "validation": "Admis"}]},
+            headers=admin,
+        )
+        assert hors_etats.status_code == 422, hors_etats.text
+
+        # Plus de credits que l'UE n'en porte : refuse, car c'est une
+        # arithmetique, pas une convention.
+        trop = await client.put(
+            f"/api/v1/deliberation/{seance_id}/decisions/{rattrapage_etudiant}/unites",
+            json={"decisions": [
+                {"ue_id": ue_ids[0], "validation": "Validée", "credits_obtenus": 999}
+            ]},
+            headers=admin,
+        )
+        assert trop.status_code == 422, trop.text
+        assert "999" in trop.json()["detail"], trop.json()
+
+        # Un ecart avec la proposition exige un motif.
+        sans_motif = await client.put(
+            f"/api/v1/deliberation/{seance_id}/decisions/{rattrapage_etudiant}/unites",
+            json={"decisions": [
+                {"ue_id": ue_ids[0], "validation": "À reprendre"}
+            ]},
+            headers=admin,
+        )
+        if sans_motif.status_code == 422:
+            assert "motif" in sans_motif.json()["detail"], sans_motif.json()
+        else:
+            # L'UE etait deja proposee « a reprendre » : l'accord n'est pas un
+            # ecart, et il n'y a donc rien a motiver.
+            assert sans_motif.status_code == 200, sans_motif.text
+
+        # Le cas normal : le jury tranche sur les trois etats.
+        tranche = await client.put(
+            f"/api/v1/deliberation/{seance_id}/decisions/{rattrapage_etudiant}/unites",
+            json={"decisions": [
+                {"ue_id": ue_ids[0], "validation": "Validée en SR", "motif": "Reprise apres epreuve de rattrapage."},
+                {"ue_id": ue_ids[1], "validation": "À reprendre"},
+            ]},
+            headers=admin,
+        )
+        assert tranche.status_code == 200, tranche.text
+        corps = tranche.json()
+        dec = corps["moyennes_ue"][ue_ids[0]]
+        assert dec["validation"] == "Validée en SR", dec
+        assert dec["credits_obtenus"] > 0, (
+            f"Une UE validee en rattrapage rapporte zero credit : {dec}"
+        )
+        dec_reprise = corps["moyennes_ue"][ue_ids[1]]
+        assert dec_reprise["validation"] == "À reprendre", dec_reprise
+        assert dec_reprise["credits_obtenus"] == 0, (
+            "Une UE a reprendre ne peut pas rapporter de credit : le rattrapage "
+            "serait deja fait."
+        )
+        # Les decisions sont partielles et repetables : une UE non tranchee
+        # compte zero, elle ne prevoit pas les credits que le jury lui donnerait.
+        assert corps["ects_acquis"] == sum(
+            int(v.get("credits_obtenus") or 0)
+            for v in corps["moyennes_ue"].values()
+            if v.get("validation")
+        ), corps["ects_acquis"]
+        print("  [OK] Decisions par UE : trois etats, ecart motive, credits bornes.")
 
         # ------------------------------------------------------------------
         # ------------------------------------------------------------------

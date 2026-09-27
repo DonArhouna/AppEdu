@@ -45,12 +45,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { academicApi, extractErrorMessage, notesImportApi } from "@/services/apiClient";
+import { academicApi, extractErrorMessage, notesImportApi, semestresApi } from "@/services/apiClient";
 import type {
   AcademicClass,
   AcademicSession,
   ModeleImportNotes,
   RapportImportNotes,
+  Semestre,
 } from "@/services/apiTypes";
 import { toast } from "sonner";
 
@@ -80,6 +81,18 @@ const ImportNotesDialog = ({
   const [matiereId, setMatiereId] = useState(matiereCourante ?? "");
   const [sessionId, setSessionId] = useState(sessionCourante ?? "");
   const [fichier, setFichier] = useState<File | null>(null);
+  /**
+   * Semestre de rattachement des notes, et caractere de rattrapage.
+   *
+   * Le semestre n'est pas une commodite : un **enseignement annuel** est note
+   * sur chaque semestre, et c'est le seul endroit ou la note dit a quel
+   * semestre elle appartient. Cocher « rattrapage » sans semestre serait refuse
+   * par le serveur — les notes remplaceraient une premiere tentative qu'on ne
+   * saurait pas laquelle.
+   */
+  const [semestreId, setSemestreId] = useState("");
+  const [rattrapage, setRattrapage] = useState(false);
+  const [semestres, setSemestres] = useState<Semestre[]>([]);
   const [rapport, setRapport] = useState<RapportImportNotes | null>(null);
   const [analyse, setAnalyse] = useState(false);
   const [validation, setValidation] = useState(false);
@@ -89,6 +102,9 @@ const ImportNotesDialog = ({
     setRapport(null);
     setFichier(null);
     setErreur(null);
+    // Le rattrapage retombe a faux : la case reste cochee d'un import a
+    // l'autre, et l'agent finirait par remplacer des notes sans le vouloir.
+    setRattrapage(false);
   }, []);
 
   useEffect(() => {
@@ -103,6 +119,20 @@ const ImportNotesDialog = ({
       if (resultat.data) setClasses(resultat.data);
     });
   }, [ouvert, reinitialiser, matiereCourante, sessionCourante]);
+
+  // Les semestres dependent de la session. Changer de session **efface** le
+  // semestre choisi : le garder afficherait des notes d'une autre session.
+  useEffect(() => {
+    setSemestreId("");
+    if (!sessionId) {
+      setSemestres([]);
+      return;
+    }
+    (async () => {
+      const repartition = await semestresApi.getRepartition(sessionId);
+      setSemestres(repartition.data?.semestres ?? []);
+    })();
+  }, [sessionId]);
 
   const choisirFichier = (evenement: React.ChangeEvent<HTMLInputElement>) => {
     setFichier(evenement.target.files?.[0] ?? null);
@@ -125,6 +155,13 @@ const ImportNotesDialog = ({
       );
       return;
     }
+    if (rattrapage && !semestreId) {
+      setErreur(
+        "Un import de rattrapage doit préciser le semestre. Sans lui, les notes "
+          + "remplaceraient une première tentative qu'on ne saurait pas laquelle."
+      );
+      return;
+    }
     setAnalyse(true);
     setErreur(null);
     const resultat = await notesImportApi.analyser({
@@ -132,6 +169,8 @@ const ImportNotesDialog = ({
       classeId,
       matiereId,
       sessionId,
+      semestreId: semestreId || null,
+      rattrapage,
     });
     setAnalyse(false);
     if (resultat.error || !resultat.data) {
@@ -228,6 +267,65 @@ const ImportNotesDialog = ({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="import-semestre">Semestre des notes</Label>
+              <Select
+                value={semestreId}
+                onValueChange={(valeur) => {
+                  setSemestreId(valeur);
+                  // Le rapport porte sur l'ancien semestre : le valider
+                  // reviendrait a ecrire autre chose que ce qui est affiche.
+                  setRapport(null);
+                }}
+              >
+                <SelectTrigger id="import-semestre">
+                  <SelectValue placeholder="Non précisé" />
+                </SelectTrigger>
+                <SelectContent>
+                  {semestres.length === 0 ? (
+                    <SelectItem value="__aucun__" disabled>
+                      Aucun semestre sur cette session
+                    </SelectItem>
+                  ) : (
+                    semestres.map((semestre) => (
+                      <SelectItem key={semestre.id} value={semestre.id}>
+                        {semestre.numero}. {semestre.libelle}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Indispensable pour un enseignement annuel, noté sur chaque
+                semestre : c'est le seul endroit où la note dit à quel semestre
+                elle appartient.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="import-rattrapage" className="flex items-center gap-2">
+                <input
+                  id="import-rattrapage"
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={rattrapage}
+                  onChange={(e) => {
+                    setRattrapage(e.target.checked);
+                    setRapport(null);
+                  }}
+                />
+                Import de rattrapage
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                {rattrapage
+                  ? "Ces notes remplaceront la première tentative sur cette "
+                    + "matière et ce semestre. Elles ne s'y ajouteront pas : le "
+                    + "bulletin n'affichera que celles-ci."
+                  : "Laissez décoché pour une saisie ordinaire. Coché, les notes "
+                    + "écrasent la première tentative au lieu de la compléter."}
+              </p>
             </div>
 
             <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">

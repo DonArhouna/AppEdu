@@ -136,10 +136,20 @@ class MoyenneUE:
     validation: Optional[str] = None
     credits_obtenus: Optional[int] = None
     mention: Optional[str] = None
+    #: Ce que le moteur a **propose** pour cette UE. Ce n'est pas une decision :
+    #: le jury peut l'avoir corrigee, ou ne pas s'etre prononce. Elle voyage a
+    #: cote pour que le bulletin puisse dire « propose, non tranche » plutot que
+    #: laisser croire que le jury a valide sur proposition.
+    proposition_validation: Optional[str] = None
+    proposition_mention: Optional[str] = None
 
     @property
     def notee(self) -> bool:
         return self.mue is not None
+
+    @property
+    def decidee(self) -> bool:
+        return self.validation is not None
 
 
 @dataclass
@@ -199,6 +209,19 @@ class BilanSemestre:
         correspondant au semestre. Le recapitulatif annuel, moyenne ponderee des
         deux bulletins, reste juste dans les deux cas — c'est pourquoi rien ici
         ne dedouble ni ne deduit.
+
+        **Aucun plafond n'est applique ici, et c'est un choix en attente.**
+        L'institut de reference compte 30 credits par semestre, 60 par annee.
+        Rien ne verifie que le total respecte ce plafond : une saisie peut
+        aboutir a 33, et le bulletin affichera 33 sans protester. La contrainte
+        n'a pas ete implementee parce que son **emplacement** n'est pas
+        tranche — refuser a la creation d'une UE enfermerait la configuration
+        (les credits s'accumulent UE par UE, donc tout remaniement passe par un
+        total superieur), alors que le refuser a la validation d'un semestre
+        n'empeche rien. C'est decide a l'usage, sur les tests.
+
+        Ne pas ecrire 30 ici avant que la question soit posee : le plafond d'un
+        autre institut n'est pas forcement 30.
         """
 
         return sum(ue.cue for ue in self.unites)
@@ -254,7 +277,45 @@ async def _notes_de_la_session(
         .outerjoin(UniteEnseignement, Matiere.ue_id == UniteEnseignement.id)
         .where(Note.etudiant_id == etudiant_id, Note.session_id == session_id)
     )
-    return list((await db.execute(stmt)).all())
+    return _ne_garder_que_le_rattrapage(list((await db.execute(stmt)).all()))
+
+
+#: Statut d'une note de rattrapage. Elle **remplace** la premiere tentative, elle
+#: ne s'y ajoute pas : sans cela, un rattrapage a 15 sur une premiere note a 12
+#: donnerait 13,50 — une moyenne que personne n'a jamais notee.
+STATUT_RATTRAPAGE = "Rattrapage"
+
+
+def _ne_garder_que_le_rattrapage(
+    lignes: List[Tuple[Note, Matiere, Optional[UniteEnseignement]]]
+) -> List[Tuple[Note, Matiere, Optional[UniteEnseignement]]]:
+    """Retire les notes d'une premiere tentative remplacees par un rattrapage.
+
+    Le regroupement se fait sur ``(matiere, semestre)``. Le semestre vient de la
+    note elle-meme quand elle en porte un — seule une UE annuelle en a besoin —
+    et de l'UE sinon.
+
+    Ce que le doit au bulletin : l'etudiant doit y trouver **sa** note, celle
+    de l'epreuve qu'il a subie. Y trouver les deux, moyennees, afficherait une
+    moyenne qui n'appartient a aucune epreuve.
+    """
+
+    groupes: Dict[Tuple[str, Optional[str]], List[Any]] = {}
+    for note, matiere, ue in lignes:
+        cle = (
+            note.matiere_id,
+            note.semestre_id if note.semestre_id is not None
+            else (ue.semestre_id if ue is not None else None),
+        )
+        groupes.setdefault(cle, []).append((note, matiere, ue))
+
+    gardees: List[Tuple[Note, Matiere, Optional[UniteEnseignement]]] = []
+    for entrees in groupes.values():
+        rattrapages = [e for e in entrees if e[0].statut == STATUT_RATTRAPAGE]
+        # Une matiere notee deux fois sans rattrapage garde ses deux notes :
+        # c'est le cas ordinaire d'un devoir et d'un examen.
+        gardees.extend(rattrapages if rattrapages else entrees)
+    return gardees
 
 
 def _construire_ue(
@@ -502,6 +563,8 @@ async def bilan_semestre(
             credits = decision.get("credits_obtenus")
             entree.credits_obtenus = int(credits) if credits is not None else None
             entree.mention = decision.get("mention")
+            entree.proposition_validation = decision.get("proposition_validation")
+            entree.proposition_mention = decision.get("proposition_mention")
 
     # Le code de l'UE est l'ordre de lecture du bulletin : UE1.2.1 avant
     # UE1.2.10, comme sur les releves.

@@ -43,6 +43,26 @@ STATUT_AJOURNE = "Ajourné"
 
 STATUTS = (STATUT_ADMIS, STATUT_RATTRAPAGE, STATUT_AJOURNE)
 
+#: Les trois etats d'une unite d'enseignement. Ce ne sont pas troissiecles
+#: hiatus : ce sont les trois seules reponses possibles du jury a « que devient
+#: cette UE ? », et toute autre valeur signifie que la decision n'a pas ete
+#: prise.
+#:
+#: ``Validée en SR`` se distingue de ``Validée`` parce qu'elle dit *comment* le
+#: credit a ete obtenu : apres une session de rattrapage. Sur un bulletin, les
+#: deux se lisent pareil pour l'etudiant mais pas pour le dossier — et c'est le
+#: dossier qui distingue un diplome sans reserve d'une admission apres
+#: epreuve.
+VALIDATION_UE_VALIDEE = "Validée"
+VALIDATION_UE_RATTRAPAGE = "Validée en SR"
+VALIDATION_UE_A_REPRENDRE = "À reprendre"
+
+VALIDATIONS_UE = (
+    VALIDATION_UE_VALIDEE,
+    VALIDATION_UE_RATTRAPAGE,
+    VALIDATION_UE_A_REPRENDRE,
+)
+
 #: Bareme de repli, uniquement si la base ne contient aucune ligne de regles.
 #: Il reprend les usages de l'institut et reste **non confirme** tant que
 #: celui-ci ne l'a pas valide.
@@ -306,6 +326,28 @@ async def proposer(
             entree["validee_par_compensation"] = False
     if compensation_possible:
         total_ects_valides = total_ects
+
+    # 3 bis. Proposition **par unite d'enseignement**, dans les trois etats que
+    # le jury peut confirmer ou corriger.
+    #
+    # Le systeme ne decide pas : il propose. La proposition est stockee a cote
+    # de la decision, jamais a sa place, et le bulletin n'affiche que la
+    # decision — la proposition seulement en la marquant comme telle. Sans
+    # cela, deux documents se contrediraient : l'un portant une decision
+    # inventee, l'autre portant le silence du jury.
+    for entree in moyennes.values():
+        if entree.get("validee"):
+            entree["proposition_validation"] = VALIDATION_UE_VALIDEE
+            entree["proposition_credits"] = int(entree.get("ects") or 0)
+        else:
+            entree["proposition_validation"] = VALIDATION_UE_A_REPRENDRE
+            # A reprendre, l'etudiant conserve zero credit de cette UE. C'est
+            # ce qui rend le rattrapage possible : une UE a reprendre ne peut
+            # pas compter dans le total deja acquis.
+            entree["proposition_credits"] = 0
+        entree["proposition_mention"] = mention_pour(
+            float(entree["moyenne"]), regles.get("bareme_mentions") or []
+        )
 
     # 4. Decision proposee.
     if moyenne_generale >= seuil_validation and total_ects_valides >= total_ects:
@@ -703,3 +745,98 @@ __all__ = [
     "proposer",
     "proposer_promotion",
 ]
+
+
+async def derniere_decision(
+    db, *, etudiant_id: str, session_id: Optional[str]
+):
+    """La derniere decision **arretee** du jury sur cette session.
+
+    Elle vit dans le service et pas dans l'endpoint : l'endpoint en a besoin
+    pour le bulletin, la liste de rattrapage en a besoin aussi, et un service
+    qui importerait un endpoint ne ferait plus un cycle — il formerait une
+    boucle d'import impossible a resoudre.
+
+    La session est **joined**, pas devinee. Une decision d'une autre session ne
+    doit pas finir sur ce bulletin : l'imprimer reviendrait a dire que le jury
+    s'est prononce sur ce semestre alors qu'il s'est prononce ailleurs.
+
+    ``decide_le`` est null tant que la decision n'est pas arretee, d'ou
+    ``nullslast`` : une decision en cours de saisie ne cohabite pas avec une
+    decision arretee sur le meme etudiant, et c'est l'arretee qui fait foi.
+    """
+
+    if session_id is None:
+        return None
+
+    return (
+        await db.execute(
+            select(DeliberationDecision)
+            .join(Deliberation, DeliberationDecision.deliberation_id == Deliberation.id)
+            .where(
+                DeliberationDecision.etudiant_id == etudiant_id,
+                Deliberation.session_id == session_id,
+            )
+            .order_by(
+                DeliberationDecision.decide_le.desc().nullslast(),
+                DeliberationDecision.created_at.desc(),
+            )
+            .limit(1)
+        )
+    ).scalars().first()
+
+
+async def matieres_a_reprendre(
+    db, *, etudiant_id: str, session_id: str
+) -> List[Dict[str, Any]]:
+    """Les matieres que le jury a decidees « a reprendre », par UE.
+
+    C'est la liste de travail du rattrapage : une UE a reprendre donne droit a
+    une **seconde epreuve sur ses matieres**, pas sur l'UE entiere. L'institut
+    en decide comme il l'entend ; ce module se contente de deduire la liste du
+    journal du jury, pour que l'agent n'ait pas a redécouvrir ce que la
+    deliberation a deja prononce.
+
+    Elle se lit dans les **decisions enregistrees**, jamais dans la proposition
+    du moteur : tant que le jury n'a pas tranche, rien n'est a reprendre. Une
+    liste issue des propositions proposerait des rattrapages que personne
+    n'a decides.
+    """
+
+    decision = await derniere_decision(
+        db, etudiant_id=etudiant_id, session_id=session_id
+    )
+    if decision is None:
+        return []
+
+    a_reprendre = [
+        identifiant
+        for identifiant, entree in (decision.moyennes_ue or {}).items()
+        if isinstance(entree, dict) and entree.get("validation") == VALIDATION_UE_A_REPRENDRE
+    ]
+    if not a_reprendre:
+        return []
+
+    lignes = (
+        await db.execute(
+            select(Matiere, UniteEnseignement)
+            .join(UniteEnseignement, Matiere.ue_id == UniteEnseignement.id)
+            .where(UniteEnseignement.id.in_(a_reprendre))
+            .order_by(UniteEnseignement.code, Matiere.nom)
+        )
+    ).all()
+
+    return [
+        {
+            "ue_id": ue.id,
+            "ue_code": ue.code,
+            "ue_nom": ue.nom,
+            "credits_ue": int(ue.credits or 0),
+            "matiere_id": matiere.id,
+            "matiere_code": matiere.code,
+            "matiere_nom": matiere.nom,
+            "coefficient": float(matiere.coefficient or 1.0),
+        }
+        for matiere, ue in lignes
+    ]
+

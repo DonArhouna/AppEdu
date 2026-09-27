@@ -67,6 +67,7 @@ import { RBACProvider, type UserRole } from "@/contexts/RBACContext";
 import RelancesPage from "@/pages/Relances";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import DeliberationPage from "@/pages/Deliberation";
+import BulletinPage from "@/pages/Bulletin";
 import { PERMISSION_INSTITUTION_SETTINGS } from "@/services/apiClient";
 
 const queryClient = new QueryClient();
@@ -321,6 +322,14 @@ const App = () => (
                       element={
                         <ProtectedRoute requiredPermission="pedagogy.write">
                           <DeliberationPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/bulletins"
+                      element={
+                        <ProtectedRoute requiredPermission="pedagogy.read">
+                          <BulletinPage />
                         </ProtectedRoute>
                       }
                     />

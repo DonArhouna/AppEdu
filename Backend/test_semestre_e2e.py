@@ -138,6 +138,32 @@ MOYENNE_S1 = 11.77
 MOYENNE_GENERALE = 12.14
 
 
+def _ue(code: str):
+    """L'UE du releve portant ce code."""
+
+    for entree in RELEVE_S2:
+        if entree[0] == code:
+            return entree
+    raise KeyError(f"{code} n'est pas dans le releve de test")
+
+
+def _mue_attendue(code: str):
+    """La MUE **affichee** sur le releve pour cette UE.
+
+    Elle est portee par la premiere matiere de l'entree : c'est un support de
+    test, pas un modele. On lit la valeur du document plutot que de la
+    recalculer — la recalculer ferait verifier le calcul par lui-meme.
+    """
+
+    return _ue(code)[3][0][5]
+
+
+def _matieres(code: str):
+    """Les matieres de cette UE, dans l'ordre du releve."""
+
+    return [entree[0] for entree in _ue(code)[3]]
+
+
 async def _cleanup() -> None:
     shutil.rmtree(TEST_DIR / "documents", ignore_errors=True)
     shutil.rmtree(TEST_DIR / "branding", ignore_errors=True)
@@ -694,6 +720,219 @@ async def _run() -> None:
         )
         print("  [OK] Recapitulatif : sur le semestre pair seulement, moyenne annuelle conforme.")
 
+        # --- Le contenu du bulletin ------------------------------------
+        # Le bulletin se construit en deux couches : le contenu d'abord, la
+        # mise en page ensuite. Ce controle porte sur la premiere — c'est elle
+        # qui decide, et c'est donc la seule qui merite d'etre verifiee contre
+        # le document.
+        from app.services.bulletin_service import NON_RENSEIGNE, composer_bulletin
+        from app.services.deliberation_service import BAREME_REPLI as _bar
+
+        async with fabrique() as db:
+            bulletin = composer_bulletin(
+                bilan,
+                infos={
+                    "etablissement": {
+                        "nom": "Institut Semestre E2E", "sigle": "ISE",
+                        "adresse": "Km 5, Dakar", "telephone": "+221 33 000 00 00",
+                        "email": "contact@ise.org", "pays": "Sénégal",
+                    },
+                    "etudiant": {
+                        "nom": "Kane", "prenom": "Harouna",
+                        "matricule": "2018-GLS-0001", "filiere": "Génie Logiciel",
+                        "niveau": "L1", "classe": "GLS-L1",
+                    },
+                    "session": {"nom": "Session Semestre", "annee_academique": "2018-2019"},
+                    "bareme_mentions": _bar["bareme_mentions"],
+                },
+                recap=recap,
+            )
+
+        # L'en-tete : ce qui identifie le document et son destinataire.
+        assert bulletin.etablissement_nom == "Institut Semestre E2E"
+        assert bulletin.matricule == "2018-GLS-0001"
+        assert bulletin.filiere == "Génie Logiciel"
+        assert bulletin.semestre_numero == 2
+        assert bulletin.semestre_libelle == "S2"
+        assert bulletin.session_annee == "2018-2019"
+
+        # Les sept UE du releve, dans l'ordre du code — pas dans l'ordre de la
+        # base. L'ordre de lecture est celui des releves : UE1.2.1, UE1.2.2, …
+        assert [bloc.code for bloc in bulletin.blocs] == [c for c, *_ in RELEVE_S2], (
+            [bloc.code for bloc in bulletin.blocs]
+        )
+
+        # Chaque UE porte son CUE, ses matieres et sa MUE affichee.
+        for (code, _nom, cue, _releve), bloc in zip(RELEVE_S2, bulletin.blocs):
+            assert bloc.cue == cue, f"{code} : CUE {bloc.cue} au lieu de {cue}"
+            assert bloc.mue == _mue_attendue(code), (
+                f"{code} : MUE affichee {bloc.mue} au lieu de "
+                f"{_mue_attendue(code)}."
+            )
+            assert len(bloc.matieres) == len(_matieres(code)), bloc.matieres
+
+        # La moyenne du semestre et sa mention, 12,51 → Assez Bien.
+        assert bulletin.moyenne_semestre == MOYENNE_S2, bulletin.moyenne_semestre
+        assert bulletin.mention_semestre == "Assez Bien", bulletin.mention_semestre
+        assert bulletin.credits_prevus == CREDITS_S2, bulletin.credits_prevus
+        assert bulletin.matieres() == 14, bulletin.matieres()
+
+        # Les nombres s'impriment a la francaise : « 12,51 », pas « 12.51 ».
+        # Le meme nombre ecrit autrement sur un document officiel se lit comme
+        # une autre note.
+        premiere = bulletin.blocs[0].matieres[0]
+        assert premiere.cec_texte() == "1,00", premiere.cec_texte()
+        assert premiere.mec == 12.00, premiere.mec
+
+        # Le recapitulatif annuel : deux lignes, plus la synthese.
+        assert [ligne.libelle for ligne in bulletin.recapitulatif] == ["S1", "S2"], (
+            bulletin.recapitulatif
+        )
+        assert bulletin.moyenne_annuelle == MOYENNE_GENERALE, bulletin.moyenne_annuelle
+        assert bulletin.mention_annuelle == "Assez Bien", bulletin.mention_annuelle
+
+        # Un semestre sans recapitulatif ne laisse pas un bloc vide : la
+        # fonction rend le bulletin du semestre impair, sans ces lignes.
+        async with fabrique() as db:
+            bulletin_s1 = composer_bulletin(
+                bilan1,
+                infos={"etablissement": {"nom": "ISE"}, "etudiant": {"nom": "Kane", "prenom": "Harouna"}},
+                recap=recap1,
+            )
+        assert bulletin_s1.recapitulatif == [], bulletin_s1.recapitulatif
+        assert bulletin_s1.moyenne_annuelle is None, bulletin_s1.moyenne_annuelle
+        print("  [OK] Bulletin : 7 UE, moyenne 12,51, recapitulatif 12,14, nombres a la francaise.")
+
+        # --- Les deux routes du bulletin ------------------------------
+        # Le JSON et le PDF sortent du meme calcul. Les verifier separement
+        # n'a d'interet que si les deux disent la meme chose — c'est
+        # exactement ce que controle cet enonce.
+        contenu = await client.get(
+            f"/api/v1/pedagogie/bulletins/{etudiant['id']}/{s2['id']}",
+            headers=admin,
+        )
+        assert contenu.status_code == 200, contenu.text
+        corps = contenu.json()
+
+        assert corps["session"]["semestre_libelle"] == "S2", corps["session"]
+        assert corps["totaux"]["moyenne"] == MOYENNE_S2, corps["totaux"]
+        assert corps["totaux"]["mention"] == "Assez Bien", corps["totaux"]
+        assert corps["totaux"]["credits_prevus"] == CREDITS_S2, corps["totaux"]
+        assert [u["code"] for u in corps["unites"]] == [c for c, *_ in RELEVE_S2], (
+            [u["code"] for u in corps["unites"]]
+        )
+        assert corps["recapitulatif"]["moyenne_annuelle"] == MOYENNE_GENERALE, (
+            corps["recapitulatif"]
+        )
+        # Aucune deliberation n'a ete tenue sur cette instance : le bulletin
+        # doit le dire, plutot que de laisser croire que le jury s'est prononce.
+        assert corps["observations"]["deliberation_absente"] is True, corps["observations"]
+
+        # L'etudiant inconnu et le semestre inconnu ne donnent pas le meme
+        # message : l'agent ne cherche pas au meme endroit.
+        inconnu = await client.get(
+            f"/api/v1/pedagogie/bulletins/etudiant-inexistant/{s2['id']}",
+            headers=admin,
+        )
+        assert inconnu.status_code == 404, inconnu.text
+        assert "étudiant" in inconnu.json()["detail"], inconnu.json()
+
+        sans_semestre = await client.get(
+            f"/api/v1/pedagogie/bulletins/{etudiant['id']}/semestre-inexistant",
+            headers=admin,
+        )
+        assert sans_semestre.status_code == 404, sans_semestre.text
+        assert "semestre" in sans_semestre.json()["detail"], sans_semestre.json()
+
+        # Le PDF, lui, doit etre un PDF, et porter les memes chiffres.
+        pdf = await client.get(
+            f"/api/v1/pedagogie/bulletins/{etudiant['id']}/{s2['id']}/pdf",
+            headers=admin,
+        )
+        assert pdf.status_code == 200, pdf.text
+        assert pdf.headers["content-type"] == "application/pdf", pdf.headers
+        assert pdf.content[:5] == b"%PDF-", pdf.content[:20]
+        assert "attachment" in pdf.headers.get("content-disposition", ""), (
+            pdf.headers.get("content-disposition")
+        )
+        # Ni signature ni cachet imprimes : le document se signe a la main.
+        assert pdf.content.count(b"/Subtype /Image") == 0, (
+            "Le bulletin contient une image. Ni signature ni cachet ne doivent "
+            "y figurer : ils sont apposes a la main, apres impression."
+        )
+        print("  [OK] Bulletin : JSON et PDF concordants, 404 nommes, rien de signe.")
+
+        # --- Aucune case vide, et pourquoi elle est vide -----------------
+        # Une matiere notee d'un seul coup affiche « n. c. » et non un tiret :
+        # un tiret affirmerait qu'aucun examen n'existe, alors qu'on ne peut
+        # pas distinguer « pas d'examen » de « examen non saisi ».
+        from app.services.bulletin_service import LigneMatiere as _Ligne
+
+        seule = _Ligne(code="X1", nom="Notée par un seul contrôle", mec=14.0)
+        assert seule.mec == 14.0
+        assert NON_RENSEIGNE == "n. c.", repr(NON_RENSEIGNE)
+
+        # L'incoherence que les donnees revelent sans rien supposer du plan de
+        # l'institut : un controle sans examen, ou l'inverse. Elle est
+        # signalee, parce que « n. c. » ne dit pas s'il manque une note ou une
+        # epreuve.
+        async with fabrique() as db:
+            ue_incomplete = UniteEnseignement(
+                id=str(uuid.uuid4()), filiere_id=filiere["id"],
+                nom="UE au controle seul", code="UE1.3.I",
+                credits=3, coefficient=1.0, heures=60,
+                semestre="S3", niveau="L1", semestre_id=s3["id"],
+            )
+            db.add(ue_incomplete)
+            await db.flush()
+            matiere_incomplete = Matiere(
+                id=str(uuid.uuid4()), ue_id=ue_incomplete.id,
+                nom="Controle sans examen", code="UE1.3.I-M1",
+                credits=3, coefficient=1.0,
+                heures_cm=0, heures_td=0, heures_tp=0,
+            )
+            db.add(matiere_incomplete)
+            await db.flush()
+            evaluation_incomplete = Examen(
+                id=str(uuid.uuid4()), nom="Devoir",
+                session_id=session["id"], matiere_id=matiere_incomplete.id,
+                type_examen="CC", date_examen=date(2019, 1, 10),
+                duree_minutes=0, coefficient=1.0,
+            )
+            db.add(evaluation_incomplete)
+            await db.flush()
+            db.add(Note(
+                id=str(uuid.uuid4()), etudiant_id=etudiant["id"],
+                matiere_id=matiere_incomplete.id, examen_id=evaluation_incomplete.id,
+                session_id=session["id"], semestre_id=s3["id"],
+                valeur=13.0, coefficient=1.0,
+            ))
+            await db.commit()
+
+        async with fabrique() as db:
+            bilan_incomplet = await service.bilan_semestre(
+                db, etudiant_id=etudiant["id"],
+                session_id=session["id"], semestre_id=s3["id"],
+            )
+            bulletin_incomplet = composer_bulletin(
+                bilan_incomplet,
+                infos={
+                    "etablissement": {"nom": "ISE"},
+                    "etudiant": {"nom": "Kane", "prenom": "Harouna"},
+                },
+            )
+        assert len(bulletin_incomplet.incompletudes) == 1, (
+            bulletin_incomplet.incompletudes
+        )
+        manque = bulletin_incomplet.incompletudes[0]
+        assert manque["code"] == "UE1.3.I-M1", manque
+        assert manque["manque"] == "examen", manque
+        # La matiere deux-devoirs du meme semestre, elle, a controle **et**
+        # examen : elle n'est pas signalee, et c'est voulu.
+        codes_signales = {e["code"] for e in bulletin_incomplet.incompletudes}
+        assert "UE1.3.D-M1" not in codes_signales, codes_signales
+        print("  [OK] Case sans valeur : « n. c. », et l'incoherence signalee.")
+
         # --- Un enseignement annuel note sur chaque semestre -----------
         # 3 credits, notes **12 en S1** et **15 en S2** : deux evaluations
         # reelles pour une seule matiere annuelle.
@@ -716,6 +955,10 @@ async def _run() -> None:
                 credits=3, coefficient=1.0,
                 heures_cm=0, heures_td=0, heures_tp=60,
             )
+            # L'identifiant est genere : le **code** ne le remplace pas, et
+            # l'utiliser ici creerait une note sur une matiere inexistante —
+            # silencieusement, puisque rien ne verifie qu'elle existe.
+            id_matiere_annuelle = matiere_annuelle.id
             db.add(matiere_annuelle)
             await db.flush()
             for semestre_id, valeur in ((s1["id"], 12.0), (s2["id"], 15.0)):
@@ -768,7 +1011,9 @@ async def _run() -> None:
             )
             # Ses 3 credits entrent dans le total du semestre ou elle figure.
             # Le total se verifie par le chiffre, pas par une recherche : c'est
-            # ce que l'agent lit sur le bulletin.
+            # ce que l'agent lit sur le bulletin. Le controle porte sur la
+            # mecanique d'addition, pas sur un equilibre de credits que c'est
+            # l'institut qui tient.
             assert bilan.credits_prevus == CREDITS_S2 + 3, (
                 f"Credits du semestre {cle} : {bilan.credits_prevus} au lieu de "
                 f"{CREDITS_S2 + 3}. Les 3 credits de l'enseignement annuel "
@@ -776,17 +1021,23 @@ async def _run() -> None:
             )
             assert bilan.annuelles_sans_note == [], bilan.annuelles_sans_note
 
-        # La presence sur les deux semestres double les credits de l'annee :
-        # 30 + 3 + 30 + 3 = 66. C'est la consequence directe de la definition,
-        # et c'est a l'institut de decider s'il inscrit 3 ou 1,5 par semestre —
-        # le moteur ne le suppose pas.
+        # Les credits d'un enseignement annuel entrent dans **chaque** semestre
+        # ou il figure. Ici l'UE vaut 3, donc chaque semestre affiche 30 + 3.
+        #
+        # Ce 33 n'est **pas** une regle du produit, et le test ne pretend pas
+        # en verifier une : un institut equilibre ses semestre a 30 credits en
+        # portant 1,5 + 1,5 sur un annuel, ce qui donne 30 / 30 / 60. Le
+        # controle porte sur la mecanique — les credits s'ajoutent une fois par
+        # semestre — et la mecanique est la meme dans les deux conventions.
         async with fabrique() as db:
             recap_annuel = await service.recap_annuel(
                 db, etudiant_id=etudiant["id"],
                 session_id=session["id"], semestre_id=s2["id"],
             )
         assert recap_annuel is not None
-        assert recap_annuel["credits_total"] == 66, recap_annuel["credits_total"]
+        assert recap_annuel["credits_total"] == (
+            CREDITS_S1 + CREDITS_S2 + 2 * 3
+        ), recap_annuel["credits_total"]
         print("  [OK] Enseignement annuel : 12 en S1, 15 en S2, jamais fusionnes.")
 
         # --- Un annuel entierement note ailleurs reste signale ------------
@@ -836,6 +1087,88 @@ async def _run() -> None:
             "semestrielle disparue."
         )
         print("  [OK] Enseignement annuel sans note ici : signale, pas muet.")
+
+        # --- Le rattrapage remplace, il ne s'ajoute pas ------------------
+        # C'est le point entier du flux. Si le rattrapage ne **remplace** pas
+        # la premiere tentative, le moteur moyenne les deux : (12 + 15) / 2 =
+        # 13,50, une moyenne que personne n'a notee, et que l'etudiant
+        # chercherait ensuite dans son dossier.
+        #
+        # On travaille sur la matiere « Expression ecrite » (UE-ANN), notee
+        # 12 en S1. On y ajoute un rattrapage a 16.
+        rattrapage_evaluation = Examen(
+            id=str(uuid.uuid4()), nom="Rattrapage",
+            session_id=session["id"], matiere_id=id_matiere_annuelle,
+            type_examen="Rattrapage", date_examen=date(2019, 7, 1),
+            duree_minutes=120, coefficient=1.0,
+        )
+        async with fabrique() as db:
+            db.add(rattrapage_evaluation)
+            await db.flush()
+            db.add(Note(
+                id=str(uuid.uuid4()), etudiant_id=etudiant["id"],
+                matiere_id=id_matiere_annuelle, examen_id=rattrapage_evaluation.id,
+                session_id=session["id"], semestre_id=s1["id"],
+                valeur=16.0, coefficient=1.0, statut="Rattrapage",
+            ))
+            await db.commit()
+
+        async with fabrique() as db:
+            bilan_apres = await service.bilan_semestre(
+                db, etudiant_id=etudiant["id"],
+                session_id=session["id"], semestre_id=s1["id"],
+            )
+        annuelle_apres = next(
+            ue for ue in bilan_apres.unites if ue.code == "UE-ANN"
+        )
+        assert annuelle_apres.mue == 16.0, (
+            f"MUE de l'enseignement annuel apres rattrapage : "
+            f"{annuelle_apres.mue} au lieu de 16,00. Si le moteur avait "
+            "moyenne les deux notes, il afficherait 14,00 — une moyenne qui "
+            "n'appartient a aucune epreuve."
+        )
+        assert len(annuelle_apres.matieres[0].evaluations) == 1, (
+            f"Le bulletin porte {len(annuelle_apres.matieres[0].evaluations)} "
+            "evaluations pour cette matiere apres rattrapage : la premiere "
+            "tentative n'a pas ete ecartee."
+        )
+        # S2 n'est pas touche : le rattrapage ne vaut que sur le semestre ou il
+        # a ete passe. Sans cela, une reussite en rattrapage accorderait des
+        # credits sur l'autre semestre, ou aucune epreuve n'a eu lieu.
+        async with fabrique() as db:
+            bilan_s2_apres = await service.bilan_semestre(
+                db, etudiant_id=etudiant["id"],
+                session_id=session["id"], semestre_id=s2["id"],
+            )
+        annuelle_s2 = next(
+            ue for ue in bilan_s2_apres.unites if ue.code == "UE-ANN"
+        )
+        assert annuelle_s2.mue == 15.0, (
+            f"Le rattrapage passe en S1 a modifie le S2 : {annuelle_s2.mue} au "
+            "lieu de 15,00. Une epreuve ne vaut que sur son semestre."
+        )
+        print("  [OK] Rattrapage : 16 remplace 12, S2 inchange, jamais de moyenne des deux.")
+
+        # --- La liste des matieres a reprendre ---------------------------
+        # Elle se lit dans les decisions du jury, pas dans les propositions.
+        rattrapage = await client.get(
+            f"/api/v1/pedagogie/rattrapage/{etudiant['id']}",
+            params={"session_id": session["id"]}, headers=admin,
+        )
+        assert rattrapage.status_code == 200, rattrapage.text
+        corps_rattrapage = rattrapage.json()
+        # Aucune seance de jury n'a ete tenue dans ce test : c'est un etat a
+        # lui, pas une liste vide qui se lirait comme « rien a reprendre ».
+        assert corps_rattrapage["etat"] == "aucune_seance", corps_rattrapage
+        assert corps_rattrapage["unites"] == [], corps_rattrapage
+        assert corps_rattrapage["message"], "Un etat doit porter son explication."
+
+        inconnu_rat = await client.get(
+            "/api/v1/pedagogie/rattrapage/etudiant-inexistant",
+            params={"session_id": session["id"]}, headers=admin,
+        )
+        assert inconnu_rat.status_code == 404, inconnu_rat.text
+        print("  [OK] Rattrapage : absence de seance signalee comme telle.")
 
         # --- Le barème de mentions ------------------------------------
         from app.services.deliberation_service import BAREME_REPLI, mention_pour

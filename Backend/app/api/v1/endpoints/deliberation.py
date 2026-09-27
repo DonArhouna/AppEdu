@@ -33,11 +33,13 @@ from app.models.academic import Classe
 from app.models.deliberation import Deliberation as DeliberationModel
 from app.models.deliberation import DeliberationDecision, ReglesDeliberation
 from app.models.etablissement import Etablissement
+from app.models.etudiant import Etudiant
 from app.models.session_academique import SessionAcademique
 from app.models.utilisateur import Utilisateur
 from app.schemas.deliberation import (
     DecisionOut,
     DecisionPrise,
+    DecisionsUnitesEns,
     DeliberationCloture,
     DeliberationCreation,
     DeliberationDetail,
@@ -482,6 +484,181 @@ async def consigner_decision(
         matricule=etudiant.matricule,
         nom=etudiant.nom,
         prenom=etudiant.prenom,
+        proposition_statut=decision.proposition_statut,
+        proposition_mention=decision.proposition_mention,
+        statut=decision.statut,
+        mention=decision.mention,
+        motif_ecart=decision.motif_ecart,
+        ecart=decision.ecart_proposition,
+        moyenne_generale=decision.moyenne_generale,
+        ects_acquis=decision.ects_acquis,
+        ects_total=decision.ects_total,
+        moyennes_ue=dict(decision.moyennes_ue or {}),
+        notes_eliminatoires=list(decision.notes_eliminatoires or []),
+        decide_le=decision.decide_le,
+    )
+
+
+@router.put(
+    "/{deliberation_id}/decisions/{etudiant_id}/unites",
+    response_model=DecisionOut,
+    summary="Consigner les decisions du jury par unite d'enseignement",
+)
+async def consigner_decisions_unites(
+    deliberation_id: str,
+    etudiant_id: str,
+    payload: DecisionsUnitesEns,
+    db: AsyncSession = Depends(get_db),
+    auteur: Utilisateur = Depends(require_deliberation_write),
+):
+    """Enregistre, pour un etudiant, ce que le jury decide sur chaque UE.
+
+    C'est l'ecrit qui manque entre la proposition du moteur et le bulletin : les
+    trois etats — ``Validée``, ``Validée en SR``, ``À reprendre`` — qui
+    commandent la suite, dont le rattrapage.
+
+    Trois garde-fous, tous necessaires :
+
+    - **Une UE inconnue est refusee.** Un typo dans un identifiant
+      enregistrerait une decision sur une UE qui n'existe pas, et le bulletin
+      n'afficherait rien — la decision serait perdue sans bruit.
+    - **Un credit superieur au total de l'UE est refuse.** Le total d'ECTS
+      acquis ne peut pas depasser le total prevu ; c'est une arithmetique, pas
+      une convention.
+    - **Un ecart avec la proposition exige un motif**, comme pour la decision
+      d'ensemble. Valider une UE que le moteur jugeait a reprendre, sans dire
+      pourquoi, laisserait un verdict inexplicable.
+
+    L'enregistrement est **partiel et repete** : envoyer trois UE sur cinq
+    n'annule pas les deux autres. Une seance se tranche progressivement, et un
+    agent qui recoit une erreur au milieu ne doit pas perdre ce qu'il a deja
+    saisi.
+    """
+
+    seance = await service.deliberation_id(db, deliberation_id)
+    if seance is None:
+        raise HTTPException(status_code=404, detail="Seance de jury introuvable.")
+
+    decision = (
+        await db.execute(
+            select(DeliberationDecision).where(
+                DeliberationDecision.deliberation_id == deliberation_id,
+                DeliberationDecision.etudiant_id == etudiant_id,
+            )
+        )
+    ).scalars().first()
+    if decision is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Aucune decision n'est encore consignee pour cet etudiant sur "
+                "cette seance. Consignez d'abord la decision d'ensemble."
+            ),
+        )
+
+    # Copie **profonde** de chaque entree, pas du seul dictionnaire.
+    #
+    # ``dict(moyennes_ue)`` ne copierait que le premier niveau : les
+    # dictionnaires internes resteraient les memes objets, et ecrire dans l'un
+    # d'eux modifierait la valeur que SQLAlchemy compare — qui ne verrait donc
+    # aucun changement, et n'ecrirait rien. L'API repondrait 200 sur une
+    # decision perdue. Chaque entree est donc recopiee, pour que l'ecriture
+    # porte sur un objet nouveau.
+    moyennes = {
+        identifiant: dict(entree)
+        for identifiant, entree in (decision.moyennes_ue or {}).items()
+        if isinstance(entree, dict)
+    }
+    inconnues = [
+        entree.ue_id
+        for entree in payload.decisions
+        if entree.ue_id not in moyennes
+    ]
+    if inconnues:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Ces unites d'enseignement ne figurent pas a cette seance : "
+                f"{', '.join(inconnues[:5])}"
+                + ("…" if len(inconnues) > 5 else "")
+                + ". La seance ne porte que les UE de la promotion, avec les "
+                "moyennes calculees a son ouverture."
+            ),
+        )
+
+    for entree in payload.decisions:
+        ref = moyennes[entree.ue_id]
+        total_ue = int(ref.get("ects") or 0)
+        # Non fourni : la totalite des credits de l'UE. C'est la lecture
+        # naturelle de « validee », et elle evite au client d'envoyer un
+        # total qu'il n'a pas a connaitre.
+        if entree.credits_obtenus is None:
+            credits = total_ue if entree.validation != service.VALIDATION_UE_A_REPRENDRE else 0
+        else:
+            credits = entree.credits_obtenus
+        if credits > total_ue:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"« {ref.get('code') or entree.ue_id} » porte {total_ue} "
+                    f"crédit(s) : on ne peut en accorder {credits}. Si le jury "
+                    "veut en accorder plus, c'est que les credits de l'UE sont "
+                    "mal saisis — corrigez l'UE, pas la decision."
+                ),
+            )
+
+        proposee = ref.get("proposition_validation")
+        ecart = proposee is not None and proposee != entree.validation
+        if ecart and not entree.motif:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"« {ref.get('code') or entree.ue_id} » : le moteur "
+                    f"proposait « {proposee} », le jury decide "
+                    f"« {entree.validation} ». Un ecart exige un motif."
+                ),
+            )
+
+        ref["validation"] = entree.validation
+        ref["credits_obtenus"] = credits
+        ref["mention"] = entree.mention or ref.get("proposition_mention")
+        if entree.motif:
+            ref["motif_ecart"] = entree.motif
+
+    decision.moyennes_ue = moyennes
+    # Le total acquis se recalcule sur les seules decisions prises. Les UE non
+    # tranchees comptent zero : leyer les credits d'une UE que le jury n'a pas
+    # validee les concedait par defaut.
+    decision.ects_acquis = sum(
+        int(ref.get("credits_obtenus") or 0)
+        for ref in moyennes.values()
+        if ref.get("validation")
+    )
+    decision.decide_le = datetime.now(timezone.utc)
+    decision.decide_par_id = auteur.id
+
+    await record_audit_event(
+        db,
+        actor_id=auteur.id,
+        actor_email=auteur.email,
+        action="deliberation.decision.unites_recorded",
+        resource_type="deliberation",
+        resource_id=seance.id,
+        details={
+            "etudiant_id": etudiant_id,
+            "unites": [e.ue_id for e in payload.decisions],
+            "ects_acquis": decision.ects_acquis,
+        },
+    )
+    await db.commit()
+    await db.refresh(decision)
+
+    etudiant = await db.get(Etudiant, etudiant_id)
+    return DecisionOut(
+        etudiant_id=decision.etudiant_id,
+        matricule=getattr(etudiant, "matricule", None) or "",
+        nom=getattr(etudiant, "nom", None) or "",
+        prenom=getattr(etudiant, "prenom", None) or "",
         proposition_statut=decision.proposition_statut,
         proposition_mention=decision.proposition_mention,
         statut=decision.statut,

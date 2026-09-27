@@ -71,6 +71,8 @@ import type {
   Semestre,
   SemestreRepartition,
   SetupStatus,
+  Bulletin,
+  RattrapageEtudiant,
   SetupInitPayload,
   BilanImportNotes,
   ModeleImportNotes,
@@ -360,6 +362,34 @@ export const deliberationApi = {
       body: JSON.stringify(regles),
     }),
 
+  /**
+   * Enregistre, pour un etudiant, ce que le jury decide sur chaque UE.
+   *
+   * Les trois etats possibles sont fermes cote serveur : `validation` hors de
+   * cette liste est refusee, parce qu'une valeur qui n'est pas une decision
+   * ne doit pas pouvoir etre enregistree. Un ecart avec la proposition du
+   * moteur exige `motif` ; le serveur le refuse aussi, et le formulaire
+   * l'exige donc avant d'activer le bouton.
+   *
+   * L'enregistrement est **partiel et repetable** : envoyer trois UE sur cinq
+   * n'annule pas les deux autres.
+   */
+  recordDecisionsUnites: (
+    deliberationId: string,
+    etudiantId: string,
+    decisions: Array<{
+      ue_id: string;
+      validation: "Validée" | "Validée en SR" | "À reprendre";
+      credits_obtenus?: number | null;
+      mention?: string | null;
+      motif?: string | null;
+    }>
+  ) =>
+    request<DecisionDeliberation>(
+      `/deliberation/${deliberationId}/decisions/${etudiantId}/unites`,
+      { method: "PUT", body: JSON.stringify({ decisions }) }
+    ),
+
   list: () => request<Deliberation[]>("/deliberation/"),
 
   get: (id: string) => request<DeliberationDetail>(`/deliberation/${id}`),
@@ -589,6 +619,39 @@ export const semestresApi = {
     }),
   delete: (id: string) =>
     request<void>(`/academic/semestres/${id}`, { method: "DELETE" }),
+};
+
+// 4. Bulletins et rattrapage
+//
+// Le bulletin est produit en **deux** appels qui sortent du meme calcul : l'un
+// rend le contenu en JSON, l'autre le PDF. Les relire, c'est verifier le
+// document avant de l'imprimer — c'est ce qui evite de distribuer un bulletin
+// faux, et c'est aussi la seule facon de voir ce que le PDF dira.
+export const bulletinsApi = {
+  /** Le contenu, avant impression. */
+  lire: (etudiantId: string, semestreId: string) =>
+    request<Bulletin>(
+      `/pedagogie/bulletins/${encodeURIComponent(etudiantId)}/${encodeURIComponent(semestreId)}`
+    ),
+
+  /** Le PDF. Ni signature ni cachet : le document se signe a la main. */
+  pdf: (etudiantId: string, semestreId: string) =>
+    requestBlob(
+      `/pedagogie/bulletins/${encodeURIComponent(etudiantId)}/${encodeURIComponent(semestreId)}/pdf`
+    ),
+
+  /**
+   * Les matieres sur lesquelles l'etudiant peut repasser une epreuve.
+   *
+   * `etat` distingue trois situations qui ne se remedient pas de la meme
+   * facon : `aucune_seance` (le jury ne s'est pas prononce), `rien_a_reprendre`
+   * (c'est une reponse) et `a_reprendre` (la liste). Une liste vide sans
+   * explication se lirait comme « rien a reprendre ».
+   */
+  rattrapage: (etudiantId: string, sessionId: string) =>
+    request<RattrapageEtudiant>(
+      `/pedagogie/rattrapage/${encodeURIComponent(etudiantId)}?session_id=${encodeURIComponent(sessionId)}`
+    ),
 };
 
 export const structureApi = {
@@ -1147,18 +1210,31 @@ export const notesImportApi = {
   /** Le format attendu, sans aucune donnee d'etudiant. */
   modele: () => request<ModeleImportNotes>("/pedagogie/import/modele"),
 
-  /** Lecture seule : renvoie le rapport ligne a ligne. */
+  /**
+   * Lecture seule : renvoie le rapport ligne a ligne.
+   *
+   * `semestreId` et `rattrapage` sont renvayes **dans** le rapport, et la
+   * validation s'en sert. L'agent voit donc exactement ce qui va etre ecrit
+   * avant de confirmer — le meme contrat que pour les notes.
+   *
+   * `rattrapage` sans `semestreId` est refuse par le serveur : les notes
+   * remplaceraient une premiere tentative qu'on ne saurait pas laquelle.
+   */
   analyser: (params: {
     fichier: File;
     classeId: string;
     matiereId: string;
     sessionId: string;
+    semestreId?: string | null;
+    rattrapage?: boolean;
   }) => {
     const corps = new FormData();
     corps.append("fichier", params.fichier);
     corps.append("classe_id", params.classeId);
     corps.append("matiere_id", params.matiereId);
     corps.append("session_id", params.sessionId);
+    if (params.semestreId) corps.append("semestre_id", params.semestreId);
+    corps.append("rattrapage", String(params.rattrapage ?? false));
     return request<RapportImportNotes>("/pedagogie/import/analyse", {
       method: "POST",
       body: corps,

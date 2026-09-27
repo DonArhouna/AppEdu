@@ -68,9 +68,12 @@ import {
 import type {
   Deliberation,
   DeliberationDetail,
+  MoyenneUEProposee,
   PropositionEtudiant,
   ReglesDeliberation,
+  ValidationUE,
 } from "@/services/apiTypes";
+import { VALIDATIONS_UE } from "@/services/apiTypes";
 import { toast } from "sonner";
 
 const STATUTS = ["Admis", "Rattrapage", "Ajourné"] as const;
@@ -117,6 +120,8 @@ const DeliberationPage = () => {
   const [editionRegles, setEditionRegles] = useState(false);
   const [nouvelleSeance, setNouvelleSeance] = useState(false);
   const [decisionEnCours, setDecisionEnCours] = useState<PropositionEtudiant | null>(null);
+  /** Ecriture des decisions par UE en cours : desactive le bouton. */
+  const [enregistrementUnites, setEnregistrementUnites] = useState(false);
 
   const charger = useCallback(async () => {
     setChargement(true);
@@ -170,6 +175,49 @@ const DeliberationPage = () => {
       return;
     }
     toast.success(`Decision consignee pour ${etudiant.matricule}.`);
+    await ouvrirSeance(active.id);
+  };
+
+  /**
+   * Consigne le sort de chaque UE.
+   *
+   * C'est un enregistrement a part du verdict d'ensemble : le jury peut statuer
+   * sur l'etudiant sans avoir tranche chaque UE, et l'inverse. Le dialogue
+   * reste ouvert, parce qu'il reste des UE non tranchees a traiter — le fermer
+   * ferait perdre le travail en cours.
+   */
+  const enregistrerDecisionsUnites = async (
+    decisions: Array<{
+      ue_id: string;
+      validation: ValidationUE;
+      credits_obtenus?: number | null;
+      mention?: string | null;
+      motif?: string | null;
+    }>
+  ) => {
+    if (!active || !decisionEnCours) return;
+    setEnregistrementUnites(true);
+    const resultat = await deliberationApi.recordDecisionsUnites(
+      active.id,
+      decisionEnCours.etudiant_id,
+      decisions
+    );
+    setEnregistrementUnites(false);
+
+    if (resultat.error) {
+      toast.error(
+        extractErrorMessage(resultat.error, "Décisions par UE non consignées.")
+      );
+      return;
+    }
+    const aReprendre = decisions.filter(
+      (d) => d.validation === "À reprendre"
+    ).length;
+    toast.success(
+      aReprendre > 0
+        ? `Décisions consignées. ${aReprendre} UE à reprendre : le rattrapage est ouvert.`
+        : "Décisions consignées. Aucune UE à reprendre."
+    );
     await ouvrirSeance(active.id);
   };
 
@@ -587,6 +635,11 @@ const DeliberationPage = () => {
             ? enregistrerDecision(decisionEnCours, statut, mention, motif)
             : undefined
         }
+        onEnregistreUnites={(decisions) => {
+          if (!active || !decisionEnCours) return Promise.resolve();
+          return enregistrerDecisionsUnites(decisions);
+        }}
+        enCours={enregistrementUnites}
       />
     </div>
   );
@@ -1019,13 +1072,238 @@ interface DecisionDialogProps {
   bareme: { libelle: string; seuil_min: number }[];
   onClose: () => void;
   onEnregistre: (statut: string, mention: string | null, motif: string) => Promise<void> | void;
+  /**
+   * Enregistre les decisions du jury, unite par unite. C'est un **second**
+   * enregistrement : le verdict d'ensemble et le sort de chaque UE sont deux
+   * ecrits distincts, et l'agent peut trancher l'un sans l'autre. Un seul
+   * bouton quiPretendrait faire les deux mentirait sur ce qu'il fait.
+   */
+  onEnregistreUnites: (
+    decisions: Array<{
+      ue_id: string;
+      validation: ValidationUE;
+      credits_obtenus?: number | null;
+      mention?: string | null;
+      motif?: string | null;
+    }>
+  ) => Promise<void>;
+  enCours?: boolean;
 }
+
+/** Les decisions par UE, que le jury confirme ou corrige. */
+const DecisionUnitesGrid = ({
+  proposition,
+  onEnregistre,
+  enCours,
+}: {
+  proposition: PropositionEtudiant;
+  onEnregistre: DecisionDialogProps["onEnregistreUnites"];
+  enCours?: boolean;
+}) => {
+  // ``entrees`` est **memoise** : sans cela il serait un nouveau tableau a
+  // chaque rendu, et l'effet de reinitialisation en dessous — qui depend de
+  // lui — se relancerait indefiniment, en effacant les choix du jury a chaque
+  // frappe.
+  const entrees = useMemo(
+    () => Object.entries(proposition.moyennes_ue ?? {}),
+    [proposition.moyennes_ue]
+  );
+  // Index unique, construit une fois. Le recomputer dans une boucle — ou
+  // utiliser ``Object.fromEntries`` a chaque rendu — transforme un tableau de
+  // six elements en travail repete, et masque le lecteur derriere du bruit.
+  const parUe: Record<string, MoyenneUEProposee> = {};
+  for (const [ueId, brut] of entrees) parUe[ueId] = brut as MoyenneUEProposee;
+
+  // Point de depart : la proposition du moteur, ou la decision deja prise si
+  // le jury a tranche. Un jury qui revient sur une seance en cours retrouve
+  // ce qu'il avait dit, pas la proposition — la difference est entiere.
+  const [choix, setChoix] = useState<Record<string, ValidationUE>>({});
+  const [motifs, setMotifs] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const depart: Record<string, ValidationUE> = {};
+    for (const [ueId, entree] of entrees) {
+      const retenue = (entree as MoyenneUEProposee);
+      depart[ueId] =
+        (retenue.validation as ValidationUE | undefined) ??
+        (retenue.proposition_validation as ValidationUE | undefined) ??
+        "À reprendre";
+    }
+    setChoix(depart);
+    setMotifs({});
+  }, [entrees]);
+
+  if (entrees.length === 0) {
+    // Aucune UE : ce n'est pas un etat vide banal. Cela veut dire que le
+    // moteur n'a rien a proposer, donc que les moyennes sont illisibles ou
+    // qu'aucune UE ne porte de credits. Le dire, plutot que d'afficher un
+    // tableau sans ligne que l'agent prendrait pour « tout est tranche ».
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Aucune unité d'enseignement à trancher</AlertTitle>
+        <AlertDescription>
+          Le moteur n'a produit aucune moyenne par UE pour cet étudiant. Le
+          verdict d'ensemble reste enregistrable, mais aucune décision par UE
+          ne peut l'être : vérifiez que les matières sont rattachées à une UE et
+          que cette UE porte des crédits.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  const ecarts = entrees.filter(([ueId]) => {
+    const proposee = parUe[ueId]?.proposition_validation;
+    if (!proposee) return false;
+    if (choix[ueId] === proposee) return false;
+    return !(motifs[ueId] ?? "").trim();
+  });
+
+  const tranchees = entrees.filter(([ueId]) => !!parUe[ueId]?.validation).length;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <Label>Décision par unité d'enseignement</Label>
+        <Badge variant="outline">
+          {tranchees} / {entrees.length} tranchées
+        </Badge>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        Ces décisions commandent le rattrapage : une UE « À reprendre » donne
+        droit à une seconde épreuve sur ses matières. Elles s'enregistrent à
+        part du verdict d'ensemble — le jury peut trancher l'un sans l'autre.
+      </p>
+
+      <div className="max-h-72 overflow-y-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>UE</TableHead>
+              <TableHead className="text-right">Moyenne</TableHead>
+              <TableHead className="text-right">ECTS</TableHead>
+              <TableHead>Proposition</TableHead>
+              <TableHead>Décision du jury</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entrees.map(([ueId]) => {
+              const ue = parUe[ueId];
+              const retenue = choix[ueId];
+              const proposition_ = ue.proposition_validation;
+              const dejaTranchee = !!ue.validation;
+              const ecart = !!proposition_ && retenue !== proposition_;
+
+              return (
+                <TableRow key={ueId}>
+                  <TableCell>
+                    <div className="font-medium">{ue.code}</div>
+                    <div className="text-xs text-muted-foreground">{ue.ue}</div>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {ue.moyenne.toFixed(2).replace(".", ",")}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{ue.ects}</TableCell>
+                  <TableCell>
+                    {proposition_ ? (
+                      <Badge variant="secondary">{proposition_}</Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        aucune
+                      </span>
+                    )}
+                    {dejaTranchee && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Déjà tranché : {ue.validation}
+                      </p>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Select
+                      value={retenue}
+                      onValueChange={(valeur) =>
+                        setChoix((precedent) => ({
+                          ...precedent,
+                          [ueId]: valeur as ValidationUE,
+                        }))
+                      }
+                    >
+                      <SelectTrigger aria-label={`Décision pour ${ue.code}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {VALIDATIONS_UE.map((item) => (
+                          <SelectItem key={item} value={item}>
+                            {item}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {ecart && (
+                      <Input
+                        className="mt-2"
+                        value={motifs[ueId] ?? ""}
+                        onChange={(e) =>
+                          setMotifs((precedent) => ({
+                            ...precedent,
+                            [ueId]: e.target.value,
+                          }))
+                        }
+                        placeholder="Motif de l'écart (obligatoire)"
+                        aria-label={`Motif pour ${ue.code}`}
+                      />
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+
+      {ecarts.length > 0 && (
+        <p className="text-xs text-destructive">
+          {ecarts.length} écart(s) avec la proposition du moteur sans motif. Le
+          serveur les refuse : un verdict non motive reste inexplicable.
+        </p>
+      )}
+
+      <Button
+        variant="outline"
+        className="w-full"
+        disabled={enCours || ecarts.length > 0}
+        onClick={() =>
+          void onEnregistre(
+            entrees.map(([ueId]) => {
+              const ue = parUe[ueId];
+              return {
+                ue_id: ueId,
+                validation: choix[ueId],
+                // « À reprendre » vaut zero credit, et le serveur l'impose
+                // aussi. L'ecran ne propose donc pas un total qu'il refuserait.
+                credits_obtenus:
+                  choix[ueId] === "À reprendre" ? 0 : (ue?.ects ?? null),
+                mention: ue?.proposition_mention ?? null,
+                motif: (motifs[ueId] ?? "").trim() || null,
+              };
+            })
+          )
+        }
+      >
+        Consigner les décisions par UE
+      </Button>
+    </div>
+  );
+};
 
 const DecisionDialog = ({
   proposition,
   bareme,
   onClose,
   onEnregistre,
+  onEnregistreUnites,
+  enCours,
 }: DecisionDialogProps) => {
   const [statut, setStatut] = useState<string>("Admis");
   const [mention, setMention] = useState<string>("");
@@ -1057,7 +1335,7 @@ const DecisionDialog = ({
 
   return (
     <Dialog open={Boolean(proposition)} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Décision du jury</DialogTitle>
           <DialogDescription>
@@ -1132,6 +1410,15 @@ const DecisionDialog = ({
               </p>
             </div>
           )}
+
+          {/* Le sort de chaque UE, à part du verdict d'ensemble. */}
+          <div className="border-t pt-4">
+            <DecisionUnitesGrid
+              proposition={proposition}
+              onEnregistre={onEnregistreUnites}
+              enCours={enCours}
+            />
+          </div>
         </div>
 
         <DialogFooter>

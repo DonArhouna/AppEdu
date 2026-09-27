@@ -107,6 +107,7 @@ export const navigationSections: NavigationSection[] = [
       { title: "Emplois du Temps", icon: CalendarDays, href: "/emplois-du-temps", description: "Plannings hebdomadaires et réservations" , requiredPermission: "pedagogy.read" },
       { title: "Carnet de Notes", icon: FileText, href: "/notes", description: "Saisie des notes, CC et examens" , requiredPermission: "pedagogy.read" },
       { title: "Deliberation", icon: Scale, href: "/deliberation", description: "Seances de jury, decisions et proces-verbal" , requiredPermission: "pedagogy.write" },
+      { title: "Bulletins", icon: FileText, href: "/bulletins", description: "Relire, puis telecharger le bulletin d'un semestre" , requiredPermission: "pedagogy.read" },
       { title: "Suivi des Absences", icon: ClipboardCheck, href: "/absences", description: "Appels de classe et assiduité" , requiredPermission: "pedagogy.read" },
     ],
   },

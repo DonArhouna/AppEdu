@@ -512,6 +512,147 @@ export interface Enrollment {
   classe?: AcademicClass | null;
 }
 
+/**
+ * Les trois etats d'une unite d'enseignement.
+ *
+ * La liste est **fermee** et le serveur la refuse hors de ces trois valeurs :
+ * une quatrième reponse n'existerait pas, elle signifierait que le jury n'a pas
+ * tranche. Ecrire autre chose laisserait un bulletin affichant un verdict que
+ * personne n'a prononce.
+ */
+export type ValidationUE = "Validée" | "Validée en SR" | "À reprendre";
+
+export const VALIDATIONS_UE: ValidationUE[] = [
+  "Validée",
+  "Validée en SR",
+  "À reprendre",
+];
+
+/** Ce que le moteur a calcule, avant que le jury tranche. */
+export interface MoyenneUEProposee {
+  ue: string;
+  code: string;
+  ects: number;
+  nb_notes: number;
+  moyenne: number;
+  validee?: boolean;
+  validee_sur_merite?: boolean;
+  validee_par_compensation?: boolean;
+  eliminatoire?: boolean;
+  proposition_validation?: ValidationUE;
+  proposition_credits?: number;
+  proposition_mention?: string | null;
+  /** Ce que le jury a reellement decide. Absent tant qu'il n'a pas tranche. */
+  validation?: ValidationUE;
+  credits_obtenus?: number;
+  mention?: string | null;
+  motif_ecart?: string | null;
+}
+
+export interface BulletinMatiere {
+  code: string;
+  nom: string;
+  /** Moyenne controlee, ou `null` si aucune note de type CC. */
+  mcc: number | null;
+  /** Moyenne d'examen, ou `null` si aucune. */
+  exam: number | null;
+  cec: number;
+  mec: number | null;
+}
+
+export interface BulletinUnite {
+  code: string;
+  nom: string;
+  cue: number;
+  /** L'enseignement est annuel : il figure sur chaque semestre. */
+  annuelle: boolean;
+  mue: number | null;
+  mention: string | null;
+  /** Ce que le jury a decide. `null` tant qu'il n'a pas tranche. */
+  validation: ValidationUE | null;
+  /** Ce que le moteur avait propose. Ce n'est **pas** une decision. */
+  proposition_validation?: ValidationUE | null;
+  credits_obtenus: number | null;
+  matieres: BulletinMatiere[];
+}
+
+export interface Bulletin {
+  etudiant: {
+    nom: string;
+    prenom: string;
+    matricule: string | null;
+    filiere: string | null;
+    niveau: string | null;
+    classe: string | null;
+  };
+  etablissement: {
+    nom: string;
+    sigle: string | null;
+    adresse: string | null;
+    pays: string | null;
+  };
+  session: {
+    nom: string | null;
+    annee_academique: string | null;
+    semestre_numero: number;
+    semestre_libelle: string;
+  };
+  unites: BulletinUnite[];
+  totaux: {
+    credits_prevus: number;
+    credits_obtenus: number;
+    moyenne: number | null;
+    mention: string | null;
+  };
+  recapitulatif: {
+    lignes: Array<{ libelle: string; credits: number | null; moyenne: number | null }>;
+    moyenne_annuelle: number | null;
+    mention_annuelle: string | null;
+  };
+  observations: {
+    incompletudes: Array<{
+      unite: string;
+      matiere: string;
+      code: string;
+      manque: string;
+    }>;
+    annuelles_absentes: Array<{
+      ue_id: string;
+      unite: string;
+      code: string;
+      raison: string;
+    }>;
+    hors_bulletin: Array<{ matiere?: string; code?: string; raison?: string }>;
+    /** Aucune seance de jury : le bulletin ne porte aucune decision. */
+    deliberation_absente: boolean;
+  };
+}
+
+export type RattrapageEtat = "aucune_seance" | "rien_a_reprendre" | "a_reprendre";
+
+export interface RattrapageEtudiant {
+  etudiant_id: string;
+  matricule: string;
+  nom: string;
+  prenom: string;
+  etat: RattrapageEtat;
+  /** Pourquoi l'etat est ce qu'il est. `null` quand il y a une liste. */
+  message: string | null;
+  unites: Array<{
+    ue_id: string;
+    ue_code: string;
+    ue_nom: string;
+    credits_ue: number;
+    matieres: Array<{
+      matiere_id: string;
+      matiere_code: string;
+      matiere_nom: string;
+      coefficient: number;
+    }>;
+  }>;
+  total_matieres: number;
+}
+
 export interface Semestre {
   id: string;
   session_id: string;

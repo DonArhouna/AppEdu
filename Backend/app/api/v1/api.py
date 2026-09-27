@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     etudiants_import,
     documents,
     pedagogie,
+    bulletins,
     note_import,
     finances,
     relances,
@@ -89,6 +90,15 @@ api_router.include_router(
     tags=["Import de notes"],
 )
 api_router.include_router(pedagogie.router, prefix="/pedagogie", tags=["Pédagogie & Notes"])
+# Le bulletin est montee sous ``/pedagogie`` : c'est un document de notes, et
+# il se telecharge au meme endroit que les notes qu'il reprend. La route
+# litterale ``/bulletins/...`` ne peut pas etre captee par une route a
+# parametre de la pedagogie, qui n'en a pas de ce nom.
+api_router.include_router(
+    bulletins.router,
+    prefix="/pedagogie",
+    tags=["Bulletins de notes"],
+)
 api_router.include_router(finances.router, prefix="/finances", tags=["Finances & Encaissements"])
 api_router.include_router(
     relances.router,

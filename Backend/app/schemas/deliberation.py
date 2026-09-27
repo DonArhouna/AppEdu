@@ -1,7 +1,7 @@
 """Schemas de la deliberation : regles, seance de jury, decisions."""
 
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -142,6 +142,46 @@ class PropositionEtudiant(BaseModel):
     decision_mention: Optional[str] = None
     motif_ecart: Optional[str] = None
     ecart: bool = False
+
+
+class DecisionUniteEns(BaseModel):
+    """Ce que le jury decide pour **une** unite d'enseignement.
+
+    Les trois valeurs possibles sont fermees : ``Validée``, ``Validée en SR``,
+    ``À reprendre``. Une valeur hors de cette liste signifierait que le jury
+    n'a pas tranche, et un bulletin qui l'afficherait Pretendrait une decision
+    qui n'existe pas. Le schema refuse donc l'autre plutot que de la stocker.
+    """
+
+    ue_id: str
+    validation: Literal[
+        "Validée", "Validée en SR", "À reprendre"
+    ] = Field(
+        ...,
+        description="La décision du jury pour cette unité d'enseignement.",
+    )
+    #: Credits acquis pour cette UE. Le jury peut en accorder moins que le
+    #: total, meme sur une UE validee : c'est une compensation partielle.
+    credits_obtenus: Optional[int] = Field(None, ge=0)
+    mention: Optional[str] = None
+    motif: Optional[str] = Field(
+        None,
+        max_length=255,
+        description="Motif d'un ecart avec la proposition du moteur.",
+    )
+
+
+class DecisionsUnitesEns(BaseModel):
+    """Les decisions du jury pour toutes les UE d'un etudiant, en un envoi.
+
+    Une seance se tranche etudiant par etudiant, UE par UE. Un envoi par UE
+    obligerait l'agent a repartir sur le reseau a chaque ligne, et laisserait
+    la seance a moitie enregistree si le navigateur se fermait entre deux.
+    """
+
+    decisions: List[DecisionUniteEns] = Field(
+        ..., min_length=1, description="Au moins une unité d'enseignement."
+    )
 
 
 class DecisionOut(BaseModel):

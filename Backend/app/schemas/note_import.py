@@ -53,6 +53,21 @@ class AnalyseNotesReponse(BaseModel):
     #: false lorsqu'aucune note ne peut etre enregistree : le bouton de
     #: validation doit alors etre indisponible, et non produire un import vide.
     importable: bool = False
+    #: Le contexte de l'import, tel que l'analyse l'a recu. Il est **renvoye**
+    #: et non recalcule a la validation : le rapport est le contrat, et la
+    #: validation ne peut donc faire que ce que l'analyse a montre.
+    #:
+    #: La reponse declare ce champ plutot que de l'ajouter apres coup : un
+    #: client qui l'ignore doit pouvoir le voir. Une validation sans semestre
+    #: ecrirait des notes sans semestre en paraissant avoir suivi l'analyse.
+    #:
+    #: ``semestre_id`` est indispensable a un enseignement annuel, note sur
+    #: chaque semestre. ``rattrapage`` dit que les notes **remplacent** la
+    #: premiere tentative sur ce semestre, au lieu de s'y ajouter.
+    #:
+    #: Le champ ne s'appelle pas ``import`` : c'est un mot-cle Python. Un alias
+    #: aurait garde le nom dans le JSON tout en etant un piege a lire.
+    contexte: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ImportNotesBilan(BaseModel):

@@ -545,6 +545,8 @@ async def valider(
     rapport: RapportImportNotes,
     matiere_id: str,
     session_id: str,
+    semestre_id: Optional[str] = None,
+    rattrapage: bool = False,
 ) -> Dict[str, Any]:
     """Ecrit les notes annoncees par le rapport, et renvoie le bilan reel.
 
@@ -555,6 +557,17 @@ async def valider(
 
     Les lignes en erreur sont **sautees, pas bloquees** : 300 notes correctes
     ne doivent pasdependre d'une cellule erronee dans un fichier de 320 lignes.
+
+    ``semestre_id`` et ``rattrapage`` sont deux parametres, et non deux
+    options cachees :
+
+    - le semestre **est ecrit sur chaque note**. Sans lui, les notes d'un
+      enseignement annuel — evalue sur chaque semestre — seraient
+      indiscernables, et le moteur ne pourrait pas les repartir ;
+    - ``rattrapage`` marque les notes comme **remplaçant** une premiere
+      tentative. Le moteur ecarte alors les notes precedentes de la meme
+      matiere sur le meme semestre. C'est ce qui evite d'afficher (12 + 15) / 2
+      sur le bulletin, une moyenne que personne n'a notee.
     """
 
     if not rapport.evaluations:
@@ -575,7 +588,11 @@ async def valider(
         cle = normalize_header(evaluation["nom"])
         if cle in par_cle:
             continue
-        type_examen = evaluation["type"]
+        # En rattrapage, l'evaluation porte ce type. Ce n'est pas un
+        # detail d'intitule : c'est ce qui distingue l'epreuvre de seconde
+        # chance d'une nouvelle epreuve ordinaire, sur le releve comme sur le
+        # dossier de l'etudiant.
+        type_examen = "Rattrapage" if rattrapage else evaluation["type"]
         db.add(Examen(
             id=str(uuid.uuid4()),
             nom=evaluation["nom"],
@@ -642,8 +659,10 @@ async def valider(
                     matiere_id=matiere_id,
                     examen_id=examen.id,
                     session_id=session_id,
+                    semestre_id=semestre_id,
                     valeur=valeur,
                     coefficient=float(evaluation["coefficient"]),
+                    statut="Rattrapage" if rattrapage else "Validé",
                 ))
                 creees += 1
 
