@@ -12,12 +12,7 @@ import sys
 from datetime import date
 from typing import Dict, Any
 
-from app.services.deliberation_engine import (
-    DeliberationEngine,
-    DeliberationConfig,
-    EtudiantDeliberationResult,
-    PromotionDeliberationResult,
-)
+
 
 
 def test_structure_models_and_schemas():
@@ -98,24 +93,64 @@ def test_etudiant_models_and_matricule():
 
     # Une suppression peut créer un trou dans la séquence. Le générateur doit
     # retourner le premier numéro réellement disponible, pas count + 1.
-    class _MatriculeResult:
+    #
+    # Le générateur interroge maintenant **deux** tables : la nomenclature en
+    # vigueur, puis les matricules déjà pris. Le faux d'avant répondait la même
+    # chose aux deux requêtes, ce qui ne testait plus rien.
+    class _Resultat:
+        def __init__(self, valeurs):
+            self._valeurs = list(valeurs)
+
         def scalars(self):
             return self
 
         def all(self):
-            return ["2026-GL-0001", "2026-GL-0003"]
+            return list(self._valeurs)
 
-    class _MatriculeSession:
-        async def execute(self, _statement):
-            return _MatriculeResult()
+        def first(self):
+            return self._valeurs[0] if self._valeurs else None
+
+    class _SessionMatricule:
+        def __init__(self, parametres=None, matricules=None):
+            self._parametres = list(parametres or [])
+            self._matricules = list(matricules or [])
+
+        async def execute(self, statement):
+            # On reconnaît la table visée, comme le fait le pilote.
+            if "parametres_matricule" in str(statement):
+                return _Resultat(self._parametres)
+            return _Resultat(self._matricules)
 
     from app.services.matricule_service import generate_matricule
 
+    # Aucune nomenclature enregistrée : c'est la règle de départ, celle qui
+    # reproduit le format historique.
+    session_matricule = _SessionMatricule(
+        parametres=[],
+        matricules=["2026-GL-0001", "2026-GL-0003"],
+    )
     generated = asyncio.run(
-        generate_matricule(_MatriculeSession(), filiere_code="GL", annee=2026)
+        generate_matricule(session_matricule, filiere_code="GL", annee=2026)
     )
     assert generated == "2026-GL-0002", f"Séquence matricule invalide: {generated}"
     print("  [OK] Trou de séquence détecté, prochain matricule:", generated)
+
+    # La nomenclature enregistrée est prise en compte : un modèle personnalisé
+    # ne peut pas être ignoré, sinon le paramètre serait décoratif.
+    from app.models.parametres_matricule import ParametresMatricule
+
+    session_personnalisee = _SessionMatricule(
+        parametres=[ParametresMatricule(
+            id="pm-1", etablissement_id="etab-1", modele="{filiere}-{numero}",
+            largeur_numero=3, demarrage=1,
+        )],
+        matricules=[],
+    )
+    genere = asyncio.run(
+        generate_matricule(session_personnalisee, filiere_code="GL", annee=2026)
+    )
+    assert genere == "GL-001", f"Modèle personnalisé ignoré: {genere}"
+    print("  [OK] Nomenclature enregistrée appliquée:", genere)
 
     # Test inscription
     insc_in = EtudiantInscriptionRequest(
@@ -124,120 +159,6 @@ def test_etudiant_models_and_matricule():
         niveau="Master 1",
     )
     print("  [OK] Inscription mise à jour validée pour session:", insc_in.session_id)
-    return True
-
-
-def test_pedagogie_and_deliberation_engine():
-    print("\n--- [TEST 3] Pédagogie & Moteur de Délibération ECTS ---")
-    from app.schemas.pedagogie import NoteCreate, NoteBulkCreate, NoteBulkItem
-
-    # 1. Test Saisie de Notes
-    bulk_notes = NoteBulkCreate(
-        matiere_id="INF301-1",
-        notes=[
-            NoteBulkItem(etudiant_id="ETU001", valeur=16.5, coefficient=2.0),
-            NoteBulkItem(etudiant_id="ETU002", valeur=14.0, coefficient=2.0),
-            NoteBulkItem(etudiant_id="ETU003", valeur=6.5, coefficient=2.0),  # < 7 (éliminatoire)
-        ]
-    )
-    assert len(bulk_notes.notes) == 3
-    print("  [OK] Saisie en lot (bulk) validée pour 3 étudiants.")
-
-    # 2. Test Moteur de Délibération Individuelle (Cas Admis avec mention)
-    etudiant_admis_data = {
-        "id": "etu-1",
-        "matricule": "2026-GL-0001",
-        "nom": "Ba",
-        "prenom": "Amadou",
-        "filiere": "Génie Logiciel",
-        "semestre": "Semestre 1",
-        "ues_raw": [
-            {
-                "code": "UE-INF101",
-                "nom": "Architecture Logicielle",
-                "ects": 10,
-                "ecues": [
-                    {"code": "EC1", "nom": "Microservices", "note": 16.5, "coef": 2.0},
-                    {"code": "EC2", "nom": "DevOps", "note": 15.0, "coef": 2.0},
-                ],
-            },
-            {
-                "code": "UE-INF102",
-                "nom": "Bases de Données",
-                "ects": 10,
-                "ecues": [
-                    {"code": "EC3", "nom": "PostgreSQL Avancé", "note": 14.0, "coef": 1.5},
-                    {"code": "EC4", "nom": "NoSQL", "note": 15.5, "coef": 1.5},
-                ],
-            },
-            {
-                "code": "UE-MGT101",
-                "nom": "Management & Anglais",
-                "ects": 10,
-                "ecues": [
-                    {"code": "EC5", "nom": "Agilité", "note": 17.0, "coef": 1.0},
-                    {"code": "EC6", "nom": "Anglais Tech", "note": 14.5, "coef": 1.0},
-                ],
-            },
-        ],
-    }
-
-    res_admis = DeliberationEngine.calculer_etudiant(etudiant_admis_data)
-    print(f"  [OK] Délibération Étudiant Admis: Moyenne = {res_admis.moyenne_generale}/20, ECTS = {res_admis.total_ects_acquis}/{res_admis.total_ects_max}")
-    print(f"       Décision: {res_admis.statut_session}, Mention: {res_admis.mention}")
-    assert res_admis.statut_session == "Admis"
-    assert res_admis.total_ects_acquis == 30
-    assert res_admis.mention in ["Bien", "Très Bien"]
-
-    # 3. Test Délibération Individuelle (Cas Note Éliminatoire < 7 -> Rattrapage)
-    etudiant_eliminatoire_data = {
-        "id": "etu-2",
-        "matricule": "2026-GL-0002",
-        "nom": "Ndiaye",
-        "prenom": "Awa",
-        "filiere": "Génie Logiciel",
-        "semestre": "Semestre 1",
-        "ues_raw": [
-            {
-                "code": "UE-INF101",
-                "nom": "Architecture Logicielle",
-                "ects": 10,
-                "ecues": [
-                    {"code": "EC1", "nom": "Microservices", "note": 14.0, "coef": 2.0},
-                    {"code": "EC2", "nom": "DevOps", "note": 13.0, "coef": 2.0},
-                ],
-            },
-            {
-                "code": "UE-INF102",
-                "nom": "Bases de Données",
-                "ects": 10,
-                "ecues": [
-                    {"code": "EC3", "nom": "PostgreSQL", "note": 5.5, "coef": 1.5},  # Note éliminatoire < 7.0 !
-                    {"code": "EC4", "nom": "NoSQL", "note": 14.0, "coef": 1.5},
-                ],
-            },
-            {
-                "code": "UE-MGT101",
-                "nom": "Management",
-                "ects": 10,
-                "ecues": [
-                    {"code": "EC5", "nom": "Agilité", "note": 12.0, "coef": 1.0},
-                ],
-            },
-        ],
-    }
-    res_elim = DeliberationEngine.calculer_etudiant(etudiant_eliminatoire_data)
-    print(f"  [OK] Délibération Note Éliminatoire: Moyenne = {res_elim.moyenne_generale}/20, Note élim: {res_elim.notes_eliminatoires_details}")
-    print(f"       Décision: {res_elim.statut_session}")
-    assert res_elim.statut_session == "Rattrapage"
-    assert res_elim.has_note_eliminatoire is True
-
-    # 4. Test Promotion Cohorte
-    res_promo = DeliberationEngine.calculer_promotion([etudiant_admis_data, etudiant_eliminatoire_data])
-    print(f"  [OK] Délibération Cohorte: {res_promo.stats.total} étudiants, Taux réussite = {res_promo.stats.taux_reussite}, Moyenne Promo = {res_promo.stats.moyenne_promo}/20")
-    assert res_promo.stats.total == 2
-    assert res_promo.stats.admis == 1
-    assert res_promo.stats.rattrapage == 1
     return True
 
 
@@ -318,7 +239,6 @@ def main():
 
     test_structure_models_and_schemas()
     test_etudiant_models_and_matricule()
-    test_pedagogie_and_deliberation_engine()
     test_finances_and_receipts()
 
     print("\n================================================================")

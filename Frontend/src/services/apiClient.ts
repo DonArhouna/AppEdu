@@ -54,14 +54,31 @@ import type {
   ImportMode,
   ImportValidation,
   ConfigurationVersion,
+  DecisionDeliberation,
+  Deliberation,
+  DeliberationDetail,
+  EtudiantARelancer,
   InstitutionConfig,
   InstitutionConfigModifiee,
   InstitutionConfigPayload,
   RbacPermission,
   RbacRole,
   RbacUserAccess,
+  PropositionEtudiant,
   RbacUserPermissions,
+  ReglesDeliberation,
+  Relance,
+  Semestre,
+  SemestreRepartition,
   SetupStatus,
+  SetupInitPayload,
+  BilanImportNotes,
+  ModeleImportNotes,
+  RapportImportNotes,
+  JetonMatricule,
+  MatriculeParametres,
+  MatriculeParametresMaj,
+  SyntheseRelances,
   Student,
   StudentSummary,
   StudentPortalData,
@@ -256,7 +273,7 @@ export const authApi = {
 
 export const setupApi = {
   getStatus: () => request<SetupStatus>("/setup/status"),
-  initialize: (payload: unknown) =>
+  initialize: (payload: SetupInitPayload) =>
     request<ApiRecord>("/setup/initialize", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -323,6 +340,69 @@ export const institutionApi = {
  * `academic.read` et une balise `<img>` ne peut pas envoyer le jeton Bearer.
  * L'ecran recupere les octets par `getLogo()` et attache une URL d'objet.
  */
+
+// ---------------------------------------------------------------------------
+// 1 ter. Deliberation et jury
+// ---------------------------------------------------------------------------
+export const deliberationApi = {
+  /** Regles en vigueur, avec leur etat de confirmation. */
+  getRegles: () => request<ReglesDeliberation>("/deliberation/regles"),
+
+  /**
+   * Enregistre le reglement. `confirme` declare que l'institut valide ses
+   * propres seuils : sans cette case, les valeurs restent « a confirmer » et
+   * l'ecran le signale. Les deliberations deja tenues gardent les regles
+   * qu'elles avaient figees.
+   */
+  updateRegles: (regles: Omit<ReglesDeliberation, "confirmee" | "confirme_par" | "confirme_le"> & { confirme: boolean }) =>
+    request<ReglesDeliberation>("/deliberation/regles", {
+      method: "PUT",
+      body: JSON.stringify(regles),
+    }),
+
+  list: () => request<Deliberation[]>("/deliberation/"),
+
+  get: (id: string) => request<DeliberationDetail>(`/deliberation/${id}`),
+
+  /** Ouvre une seance. Le president et les membres sont saisis, jamais devines. */
+  create: (payload: {
+    classe_id: string;
+    session_id: string;
+    date_deliberation: string;
+    president: string;
+    membres: { nom: string; qualite?: string | null }[];
+    lieu?: string | null;
+  }) =>
+    request<Deliberation>("/deliberation/", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * Consigne la decision du jury. Le serveur refuse un ecart avec la
+   * proposition du moteur sans `motif_ecart` : l'ecart reste donc explicite
+   * dans le corps de la requete, pas seulement dans l'interface.
+   */
+  recordDecision: (id: string, etudiantId: string, decision: {
+    statut: string;
+    mention?: string | null;
+    motif_ecart?: string | null;
+  }) =>
+    request<DecisionDeliberation>(
+      `/deliberation/${id}/decisions?etudiant_id=${encodeURIComponent(etudiantId)}`,
+      { method: "POST", body: JSON.stringify(decision) },
+    ),
+
+  /**
+   * Arrete le verdict. `confirmation: "arreter"` est exigee par le serveur :
+   * la cloture est irreversible et ne doit pas dependre d'un simple clic.
+   */
+  cloturer: (id: string) =>
+    request<Deliberation>(`/deliberation/${id}/cloturer`, {
+      method: "POST",
+      body: JSON.stringify({ confirmation: "arreter" }),
+    }),
+};
 
 // ---------------------------------------------------------------------------
 // 2. Contexte global & sessions académiques
@@ -486,6 +566,31 @@ export const academicApi = {
   },
 };
 
+// 3. Semestres
+//
+// Un semestre est une donnee de l'institut : un numero, un libelle, des dates.
+// La repartition d'une session indique aussi combien d'UE restent **sans**
+// rattachement — le compte qui dit a l'agent qu'une matiere sortira du bulletin.
+export const semestresApi = {
+  getRepartition: (sessionId: string) =>
+    request<SemestreRepartition>(
+      `/academic/semestres/repartition?session_id=${encodeURIComponent(sessionId)}`
+    ),
+  getById: (id: string) => request<Semestre>(`/academic/semestres/${id}`),
+  create: (sessionId: string, data: unknown) =>
+    request<Semestre>(
+      `/academic/semestres?session_id=${encodeURIComponent(sessionId)}`,
+      { method: "POST", body: JSON.stringify(data) }
+    ),
+  update: (id: string, data: unknown) =>
+    request<Semestre>(`/academic/semestres/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    request<void>(`/academic/semestres/${id}`, { method: "DELETE" }),
+};
+
 export const structureApi = {
   // Campus
   getCampuses: () => request<Campus[]>("/structure/campuses"),
@@ -539,10 +644,16 @@ export const structureApi = {
     request<void>(`/structure/filieres/${id}`, { method: "DELETE" }),
 
   // UEs
-  getUEs: (filiereId?: string, semestre?: string) => {
+  /**
+   * `semestreId` filtre sur l'identifiant, `semestre` sur le libelle
+   * d'affichage. Le libelle n'est pas unique — deux semestres peuvent porter la
+   * meme etiquette — donc seul l'identifiant donne un resultat non ambigu.
+   */
+  getUEs: (filiereId?: string, semestre?: string, semestreId?: string) => {
     const params = new URLSearchParams();
     if (filiereId) params.append("filiere_id", filiereId);
     if (semestre) params.append("semestre", semestre);
+    if (semestreId) params.append("semestre_id", semestreId);
     return request<TeachingUnit[]>(`/structure/ues?${params.toString()}`);
   },
   getUEById: (id: string) => request<TeachingUnit>(`/structure/ues/${id}`),
@@ -710,17 +821,79 @@ export const pedagogieApi = {
       body: JSON.stringify(data),
     }),
 
-  // Moteur de Délibération ECTS
-  calculerEtudiant: (etudiantData: unknown, config?: unknown) =>
-    request<ApiRecord>("/pedagogie/deliberation/calculer-etudiant", {
+  /*
+   * Les methodes de calcul de deliberation ont ete retirees avec le moteur
+   * qu'elles appelaient. Un verdict calcule a partir d'un dossier fourni par
+   * l'appelant, sans jury, n'a aucune valeur : la seule voie est
+   * `deliberationApi`, qui travaille sur les notes reellement enregistrees.
+   */
+};
+
+// ---------------------------------------------------------------------------
+// 1 quater. Relances de facturation
+// ---------------------------------------------------------------------------
+export const relancesApi = {
+  /**
+   * Creances en retard a suivre. `retardMinimum` vaut 1 par defaut : une
+   * facture echue aujourd'hui n'a pas de retard, et relancer le jour de
+   * l'echeance serait injustifiable.
+   */
+  getARelancer: (params?: { sessionId?: string; retardMinimum?: number }) => {
+    const requete = new URLSearchParams();
+    if (params?.sessionId) requete.set("session_id", params.sessionId);
+    if (params?.retardMinimum !== undefined)
+      requete.set("retard_minimum", String(params.retardMinimum));
+    const suffixe = requete.toString() ? `?${requete}` : "";
+    return request<SyntheseRelances>(`/finances/relances${suffixe}`);
+  },
+
+  /** Constate une relance faite par le secretariat. */
+  enregistrer: (payload: {
+    etudiant_id: string;
+    moyen: string;
+    date_relance?: string;
+    session_id?: string | null;
+    message?: string | null;
+  }) =>
+    request<{ relance: Relance; resume: Record<string, unknown> }>("/finances/relances", {
       method: "POST",
-      body: JSON.stringify({ etudiant: etudiantData, config }),
+      body: JSON.stringify(payload),
     }),
-  calculerPromotion: (etudiants: unknown[], config?: unknown) =>
-    request<ApiRecord>("/pedagogie/deliberation/calculer-promotion", {
-      method: "POST",
-      body: JSON.stringify({ etudiants, config }),
-    }),
+
+  historique: (etudiantId?: string, limite = 100) => {
+    const requete = new URLSearchParams({ limite: String(limite) });
+    if (etudiantId) requete.set("etudiant_id", etudiantId);
+    return request<Relance[]>(`/finances/relances/historique?${requete}`);
+  },
+
+  /**
+   * Constate le solde apres une relance. Appel distinct, volontaire : le
+   * solde decrit la situation **apres** la relance, pas aujourd'hui. Un
+   * paiement posterieur ne doit pas retroagir sur le passe.
+   */
+  constaterSolde: (etudiantId: string, niveau: number) =>
+    request<{ etudiant_id: string; niveau: number; solde_apres: number; nb_relances_concernees: number }>(
+      `/finances/relances/solde?etudiant_id=${encodeURIComponent(etudiantId)}&niveau=${niveau}`,
+      { method: "POST" },
+    ),
+
+  /**
+   * Lettre de relance imprimable.
+   *
+   * Le PDF rend l'instantane fige a la relance : il dit ce qui a ete reclame
+   * ce jour-la, pas le solde du moment ou l'on imprime. Un encaissement
+   * survenu entre-temps ne doit pas faire dire a la lettre autre chose que ce
+   * qui a ete remis.
+   */
+  getLettre: (relanceId: string) =>
+    requestBlob(`/finances/relances/${encodeURIComponent(relanceId)}/lettre`),
+
+  /**
+   * Moyens declares par le serveur. L'ecran n'invente pas de liste : une
+   * saisie libre diverge des le premier synonymes et rend l'historique
+   * illisible.
+   */
+  getMoyens: () => request<string[]>("/finances/relances/moyens"),
 };
 
 // ---------------------------------------------------------------------------
@@ -831,6 +1004,13 @@ export const etudiantImportApi = {
   urlModeleCsv: () => `${API_BASE_URL}/etudiants/import/modele.csv`,
 };
 
+/** Telecharge le proces-verbal d'une seance de jury. */
+export async function telechargerProcesVerbal(
+  deliberationId: string
+): Promise<ApiResult<Blob>> {
+  return requestBlob(`/deliberation/${deliberationId}/proces-verbal`);
+}
+
 export const documentsApi = {
   /** Catalogue des types emissibles et conditions a satisfaire. */
   getTypes: () => request<TypeDocument[]>("/documents/types"),
@@ -884,6 +1064,113 @@ export const documentsApi = {
   /** URL de telechargement : le navigateur recupere le PDF directement. */
   urlTelecharger: (documentId: string) =>
     `${API_BASE_URL}/documents/${encodeURIComponent(documentId)}/telecharger`,
+};
+
+/**
+ * Nomenclature de matricule : la regle qui numerote les prochains dossiers.
+ *
+ * La regle s'applique aux **prochains** dossiers seulement. Les matricules deja
+ * attribues ne sont jamais renommes : un certificat delivre doit rester
+ * rattache a l'identifiant de l'epoque.
+ */
+export const matriculeApi = {
+  get: () => request<MatriculeParametres>("/institution/matricule"),
+
+  /** Jetons acceptes dans le modele, servis par le backend. */
+  getJetons: () =>
+    request<{ jetons: JetonMatricule[] }>("/institution/matricule/jetons"),
+
+  update: (payload: MatriculeParametresMaj) =>
+    request<MatriculeParametres>("/institution/matricule", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+};
+
+/**
+ * Export de la liste des etudiants.
+ *
+ * Le fichier est produit par le serveur, jamais par l'ecran : un export
+ * construit dans le navigateur partirait de la liste affichee, donc de la
+ * page courante, et l'institut croirait avoir exporte toute la promotion
+ * alors qu'il n'en aurait sorti qu'une page.
+ *
+ * `classeId` restreint a une promotion. Sans lui, l'export porte sur tous les
+ * etudiants — un usage legitime, pas une degradation.
+ */
+export const etudiantsExportApi = {
+  /** Retourne l'URL de telechargement et le nombre de lignes exportees. */
+  async telecharger(
+    options: { classeId?: string; format?: "xlsx" | "csv" } = {}
+  ): Promise<{ url: string; nombre: number; nomFichier: string }> {
+    const params = new URLSearchParams();
+    if (options.classeId) params.set("classe_id", options.classeId);
+    params.set("format", options.format ?? "xlsx");
+    const url = `${API_BASE_URL}/etudiants/export?${params.toString()}`;
+
+    const reponse = await fetch(url, { headers: getHeaders() });
+    if (!reponse.ok) {
+      // L'echec doit dire pourquoi : un 404 sur une classe supprimee ne se
+      // deduit pas d'un fichier qui ne s'ouvre pas.
+      const detail = await reponse.json().catch(() => null);
+      throw new Error(
+        extractErrorMessage(
+          detail?.detail ?? detail?.message,
+          `Erreur serveur (${reponse.status})`
+        )
+      );
+    }
+    const nombre = Number(reponse.headers.get("X-Export-Etudiants") ?? "0");
+    const entete = reponse.headers.get("Content-Disposition") ?? "";
+    const trouve = /filename="([^"]+)"/.exec(entete);
+    return {
+      url: URL.createObjectURL(await reponse.blob()),
+      nombre,
+      nomFichier: trouve?.[1] ?? "etudiants.xlsx",
+    };
+  },
+};
+
+/**
+ * Import de notes depuis un tableur.
+ *
+ * L'ecran ne construit **jamais** le fichier a envoyer, et n'invente **jamais**
+ * une colonne : le serveur lit le fichier, decide ce qu'est une evaluation, et
+ * renvoie le rapport. L'ecran se contente de le montrer.
+ *
+ * Le meme decouplage que l'import d'etudiants : `analyser` n'ecrit rien,
+ * `valider` ecrit ce que le rapport annoncait. L'agent lit donc avant
+ * d'ecrire, et l'ecran ne peut pas promettre autre chose que ce qu'il
+ * enregistre.
+ */
+export const notesImportApi = {
+  /** Le format attendu, sans aucune donnee d'etudiant. */
+  modele: () => request<ModeleImportNotes>("/pedagogie/import/modele"),
+
+  /** Lecture seule : renvoie le rapport ligne a ligne. */
+  analyser: (params: {
+    fichier: File;
+    classeId: string;
+    matiereId: string;
+    sessionId: string;
+  }) => {
+    const corps = new FormData();
+    corps.append("fichier", params.fichier);
+    corps.append("classe_id", params.classeId);
+    corps.append("matiere_id", params.matiereId);
+    corps.append("session_id", params.sessionId);
+    return request<RapportImportNotes>("/pedagogie/import/analyse", {
+      method: "POST",
+      body: corps,
+    });
+  },
+
+  /** Ecrit exactement ce que le rapport a annonce. */
+  valider: (rapport: unknown) =>
+    request<BilanImportNotes>("/pedagogie/import/valider", {
+      method: "POST",
+      body: JSON.stringify(rapport),
+    }),
 };
 
 export const rbacApi = {

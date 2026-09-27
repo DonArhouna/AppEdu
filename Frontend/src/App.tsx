@@ -64,7 +64,9 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { RBACProvider, type UserRole } from "@/contexts/RBACContext";
+import RelancesPage from "@/pages/Relances";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import DeliberationPage from "@/pages/Deliberation";
 import { PERMISSION_INSTITUTION_SETTINGS } from "@/services/apiClient";
 
 const queryClient = new QueryClient();
@@ -303,6 +305,22 @@ const App = () => (
                       element={
                         <ProtectedRoute requiredPermission="roles.manage">
                           <RolesPermissions />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/relances"
+                      element={
+                        <ProtectedRoute requiredPermission="finance.read">
+                          <RelancesPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/deliberation"
+                      element={
+                        <ProtectedRoute requiredPermission="pedagogy.write">
+                          <DeliberationPage />
                         </ProtectedRoute>
                       }
                     />

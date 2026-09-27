@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import InstitutionConfigCard from "@/components/institution/InstitutionConfigCard";
+import MatriculeCard from "@/components/institution/MatriculeCard";
 import { useRBAC } from "@/contexts/RBACContext";
 import {
   academicContextApi,
@@ -66,6 +67,12 @@ const Parametrage = () => {
       setContextSessionId(contextResult.data.session_id || "");
     } else {
       setAcademicContext(null);
+    }
+    // Un echec de lecture du contexte etait ignore : l'ecran affichait alors un
+    // etat « non configure » sans dire que l'API n'avait pas repondu. Les deux
+    // se ressemblent a l'ecran et n'ont rien de commun.
+    if (contextResult.error) {
+      setError(extractErrorMessage(contextResult.error));
     }
     setLoading(false);
   };
@@ -146,7 +153,9 @@ const Parametrage = () => {
             <p className="text-xs text-muted-foreground">
               {academicContext?.configuree
                 ? `Contexte enregistré : ${academicContext.annee_academique}.`
-                : "Aucune configuration explicite ; une session active existante peut être affichée comme valeur dérivée."}
+                : sessions.length === 0
+                  ? "Aucune année académique active. Créez d'abord une session dans le module Sessions, puis revenez l'activer ici."
+                  : "Aucune année académique active. Choisissez une session ci-dessus puis « Activer ce contexte »."}
             </p>
           </div>
           <Button onClick={() => void saveAcademicContext()} disabled={savingContext || sessions.length === 0}>
@@ -188,12 +197,7 @@ const Parametrage = () => {
         </CardContent>
       </Card>
 
-      <Alert>
-        <AlertTitle>Configuration non encore exposée par l'API</AlertTitle>
-        <AlertDescription>
-          Les semestres, sessions d'examen, seuils de notation et la nomenclature de matricule ne sont pas simulés ici. Ils seront ajoutés avec leurs endpoints et migrations backend.
-        </AlertDescription>
-      </Alert>
+      <MatriculeCard canEdit={canEditInstitution} />
     </div>
   );
 };

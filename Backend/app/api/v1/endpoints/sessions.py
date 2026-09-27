@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db, require_academic_read, require_academic_structure_write
 from app.models.session_academique import SessionAcademique, PeriodePaiement
+from app.models.structure import Semestre
 from app.models.etudiant import Etudiant
 from app.models.academic import Inscription
 from app.schemas.session import (
@@ -108,6 +109,39 @@ async def get_session_periods(
     return periodes
 
 
+async def _semestres_de_depart(db: AsyncSession, session_id: str) -> List[Semestre]:
+    """Les deux semestres proposes a la creation d'une session.
+
+    Ils portent un libelle et un numero, **pas** de dates : la session ne
+    fournit pas de dates exploitables, et inventer le debut d'un semestre
+    serait pretendre connaitre un calendrier que l'institut n'a pas saisi.
+
+    La proposition est faite une seule fois : si l'institut a deja retire un
+    semestre, on ne le remet pas sous le nez a la creation de la session
+    suivante.
+    """
+
+    deja = (
+        await db.execute(select(Semestre.id).where(Semestre.session_id == session_id))
+    ).scalars().first()
+    if deja is not None:
+        return []
+
+    crees: List[Semestre] = []
+    for numero in (1, 2):
+        semestre = Semestre(
+            id=f"semestre-{session_id[:20]}-S{numero}",
+            session_id=session_id,
+            numero=numero,
+            libelle=f"S{numero}",
+            actif=True,
+        )
+        db.add(semestre)
+        crees.append(semestre)
+    await db.flush()
+    return crees
+
+
 @router.post("/", response_model=SessionAcademiqueResponse, status_code=status.HTTP_201_CREATED, summary="Créer une session académique")
 async def create_session(
     payload: SessionAcademiqueCreate,
@@ -157,6 +191,7 @@ async def create_session(
             )
             db.add(periode)
 
+    await _semestres_de_depart(db, session_id)
     await db.commit()
 
     # Recharger avec les relations

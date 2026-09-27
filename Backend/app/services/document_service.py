@@ -27,6 +27,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.document_types import (
+    CODE_ATTESTATION_REUSSITE,
     CODE_CERTIFICAT,
     CODE_QUITUS,
     CODE_RELEVE,
@@ -279,6 +280,62 @@ async def situation_financiere(
     }
 
 
+async def deliberation_admis(
+    db: AsyncSession, etudiant_id: str, session_id: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """Decision ``Admis`` d'une seance de jury close, pour cet etudiant.
+
+    C'est la seule source de verite de l'attestation de reussite. La fonction
+    delegue au service de deliberation, qui applique deja les deux conditions
+    indispensables : seance close, statut Admis. Elle retourne les elements
+    necessaires au document, ou ``None`` s'il n'existe aucune admission.
+
+    L'import est local pour eviter un cycle : le service de deliberation
+    n'a pas besoin du service des documents.
+    """
+
+    from app.services import deliberation_service
+
+    if not session_id:
+        return None
+    decision = await deliberation_service.decision_admis(db, etudiant_id, session_id)
+    if decision is None:
+        return None
+
+    seance = await deliberation_service.deliberation_id(db, decision.deliberation_id)
+    if seance is None:
+        return None
+
+    return {
+        "date_deliberation": seance.date_deliberation,
+        "president": seance.president,
+        "membres": list(seance.membres or []),
+        "membre_qualite": next(
+            (m.get("qualite") for m in (seance.membres or []) if m.get("qualite")),
+            None,
+        ),
+        "classe": seance.classe.nom if seance.classe else None,
+        "filiere": (
+            seance.classe.filiere.nom
+            if seance.classe and seance.classe.filiere
+            else None
+        ),
+        "session": seance.session.nom if seance.session else None,
+        "annee_academique": seance.session.annee_academique if seance.session else None,
+        "statut": decision.statut,
+        "mention": decision.mention,
+        "moyenne_generale": decision.moyenne_generale,
+        "ects_acquis": decision.ects_acquis,
+        "ects_total": decision.ects_total,
+        "deliberation_id": seance.id,
+        "decide_le": decision.decide_le,
+        # Regles **figees dans la seance**, pas celles en vigueur aujour'hui :
+        # l'attestation doit reproduire le reglement sous lequel le jury a
+        # statue, pas celui qu'on aurait change depuis.
+        "regles": dict(seance.regles or {}),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Verification des conditions par type
 # ---------------------------------------------------------------------------
@@ -288,6 +345,7 @@ def _verifier_conditions(
     inscription: Optional[Inscription],
     notes: Sequence[Dict[str, Any]],
     finances: Dict[str, Any],
+    deliberation: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Applique les conditions declarees par le type de document.
 
@@ -316,6 +374,12 @@ def _verifier_conditions(
         manque.append(
             "au moins une note saisie sur la session (un relevé vide "
             "n'attesterait aucun résultat)"
+        )
+    if type_code == CODE_ATTESTATION_REUSSITE and deliberation is None:
+        manque.append(
+            "une décision de jury « Admis » sur une séance close (une séance "
+            "restée en brouillon ne fonde aucun droit, et une moyenne "
+            "favorable sans décision du jury n'atteste rien)"
         )
 
     if manque:
@@ -363,8 +427,17 @@ async def emettre_document(
     inscription = await _inscription_active(db, etudiant_id, session_id)
     notes, moyenne = await notes_et_moyennes(db, etudiant_id, session_id)
     finances = await situation_financiere(db, etudiant_id, session_id)
+    # La deliberation n'est collectee que pour l'attestation de reussite :
+    # les autres types n'en dependent pas.
+    deliberation = (
+        await deliberation_admis(db, etudiant_id, session_id)
+        if definition.code == CODE_ATTESTATION_REUSSITE
+        else None
+    )
 
-    _verifier_conditions(definition.code, etudiant, inscription, notes, finances)
+    _verifier_conditions(
+        definition.code, etudiant, inscription, notes, finances, deliberation
+    )
 
     annee = date.today().year
     numero = await prochain_numero(db, definition.prefixe, annee)
@@ -394,6 +467,8 @@ async def emettre_document(
         "notes": notes,
         "moyenne": moyenne,
         "finances": finances,
+        "deliberation": deliberation,
+        "regles": (deliberation or {}).get("regles") or {},
         "numero": numero,
     }
     contenu = render_document(definition.code, contexte)
@@ -425,6 +500,26 @@ async def emettre_document(
             "session": session_obj.nom if session_obj else None,
             "moyenne_generale": moyenne,
             "solde": finances["solde"],
+            # Pour l'attestation de reussite, la decision deliberee est
+            # l'element central du document : elle doit figurer dans
+            # l'instantane, comme le nom de l'etablissement.
+            "deliberation": (
+                {
+                    "date": deliberation["date_deliberation"].isoformat(),
+                    "president": deliberation["president"],
+                    "membres": deliberation["membres"],
+                    "classe": deliberation["classe"],
+                    "session": deliberation["session"],
+                    "statut": deliberation["statut"],
+                    "mention": deliberation["mention"],
+                    "moyenne_generale": deliberation["moyenne_generale"],
+                    "ects_acquis": deliberation["ects_acquis"],
+                    "ects_total": deliberation["ects_total"],
+                    "deliberation_id": deliberation["deliberation_id"],
+                }
+                if deliberation
+                else None
+            ),
             "nb_notes": len(notes),
             "nb_factures": len(finances["factures"]),
         },

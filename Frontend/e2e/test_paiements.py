@@ -24,8 +24,13 @@ def test_le_modal_de_paiement_s_ouvre(page_console, app_url, admin_connecte):
     expect(page.get_by_text("Nouveau paiement au guichet")).to_be_visible(timeout=20000)
     page.wait_for_timeout(2500)  # laisse le temps aux appels API
 
-    # La liste des etudiants est proposee.
+    # L'etudiant est choisi explicitement : la liste est ordonnee, et le
+    # premier peut n'avoir aucune periode de paiement.
     expect(page.locator("#payment-student")).to_be_visible()
+    selecteur = page.locator("#payment-student")
+    selecteur.click()
+    page.get_by_role("option", name="E2E-0001").click()
+    page.wait_for_timeout(1500)
 
     # Le point cle : aucune boucle de rendu pendant l'ouverture.
     assert not problemes, (
@@ -66,6 +71,12 @@ def test_selection_multiple_de_periodes(page_console, app_url, admin_connecte):
     expect(page.get_by_text("Nouveau paiement au guichet")).to_be_visible(timeout=20000)
     page.wait_for_timeout(2500)
 
+    # Etudiant nomme : « Tout selectionner » n'a de sens que pour un
+    # etudiant disposant de periodes.
+    page.locator("#payment-student").click()
+    page.get_by_role("option", name="E2E-0001").click()
+    page.wait_for_timeout(1500)
+
     tout = page.get_by_role("button", name="Tout sélectionner")
     expect(tout).to_be_visible()
     tout.click()
@@ -83,6 +94,9 @@ def test_fermeture_du_modal(page_console, app_url, admin_connecte):
     page.goto(f"{app_url}/paiements")
     page.get_by_role("button", name="Nouveau paiement").first.click()
     expect(page.get_by_text("Nouveau paiement au guichet")).to_be_visible(timeout=20000)
+    page.locator("#payment-student").click()
+    page.get_by_role("option", name="E2E-0001").click()
+    page.wait_for_timeout(800)
 
     page.get_by_role("button", name="Annuler").first.click()
     page.wait_for_timeout(600)

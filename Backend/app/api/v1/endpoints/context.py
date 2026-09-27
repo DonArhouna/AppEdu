@@ -56,10 +56,20 @@ async def _build_context(db: AsyncSession, etablissement: Etablissement) -> Acad
         session = result.scalar_one_or_none()
         if session:
             year = session.annee_academique
+
     if not year:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Aucune année académique active n'est configurée.",
+        # Aucune annee active n'est un **etat normal** d'une instance
+        # fraichement configuree, pas un conflit : le 409 faisait echouer
+        # l'ecran Charge de fixer precisement ce qui manque. Le schema porte
+        # `configuree` pour cela ; il doit etre atteignable, sinon il est
+        # mort. Le client sait ainsi distinguer « pas encore configure » de
+        # « configure et lu ».
+        return AcademicContextResponse(
+            annee_academique="",
+            session_id=None,
+            session=None,
+            configuree=False,
+            updated_at=etablissement.updated_at,
         )
 
     return AcademicContextResponse(

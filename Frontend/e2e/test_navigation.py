@@ -39,6 +39,7 @@ PAGES = [
     ("/emplois-du-temps", "Emplois du temps"),
     ("/notes", "Carnet de Notes"),
     ("/absences", "Suivi des Absences"),
+    ("/deliberation", "Délibération"),
     ("/enseignants", None),
     ("/personnel", None),
     ("/frais-scolarite", "Frais de Scolarité"),

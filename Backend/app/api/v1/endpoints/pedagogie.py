@@ -29,12 +29,9 @@ from app.schemas.pedagogie import (
     ExamenResponse, ExamenCreate,
     NoteResponse, NoteCreate, NoteUpdate, NoteBulkCreate,
     AbsenceResponse, AbsenceCreate,
-    DeliberationSingleRequest, DeliberationPromotionRequest,
-    EtudiantDeliberationResult, PromotionDeliberationResult,
-)
+    )
 from app.schemas.etudiant import EtudiantSummaryResponse
 
-from app.services.deliberation_engine import DeliberationEngine, DeliberationConfig
 
 router = APIRouter()
 
@@ -434,21 +431,3 @@ async def create_absence(payload: AbsenceCreate, db: AsyncSession = Depends(get_
     await db.refresh(absence)
     return absence
 
-
-# ---------------------------------------------------------------------------
-# MOTEUR DE DÉLIBÉRATION (ECTS / LMD)
-# ---------------------------------------------------------------------------
-@router.post("/deliberation/calculer-etudiant", response_model=EtudiantDeliberationResult, summary="Calculer délibération d'un étudiant")
-async def calculer_deliberation_etudiant(payload: DeliberationSingleRequest, _auth=Depends(require_pedagogy_write)):
-    """Calcule les moyennes d'UEs, crédits ECTS acquis, statut et mention pour un étudiant."""
-    config = payload.config or DeliberationConfig()
-    result = DeliberationEngine.calculer_etudiant(payload.etudiant, config=config)
-    return result
-
-
-@router.post("/deliberation/calculer-promotion", response_model=PromotionDeliberationResult, summary="Calculer délibération de cohorte")
-async def calculer_deliberation_promotion(payload: DeliberationPromotionRequest, _auth=Depends(require_pedagogy_write)):
-    """Calcule le PV de jury global d'une promotion/cohorte entière avec statistiques de réussite."""
-    config = payload.config or DeliberationConfig()
-    result = DeliberationEngine.calculer_promotion(payload.etudiants, config=config)
-    return result

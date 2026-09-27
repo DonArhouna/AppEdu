@@ -27,6 +27,19 @@ from app.models.document_officiel import DocumentOfficiel
 # ``etablissements`` et ``utilisateurs`` par cle etrangere, donc importe apres
 # les deux.
 from app.models.configuration import ConfigurationVersion
+# Deliberation : reference ``etablissements``, ``utilisateurs`` par cle
+# etrangere, donc apres les deux ; et ``classes`` / ``sessions_academiques`` /
+# ``etudiants``, donc apres le socle academique.
+from app.models.deliberation import (
+    Deliberation,
+    DeliberationDecision,
+    ReglesDeliberation,
+)
+# Relances de facturation : reference ``etudiants`` et ``utilisateurs`` par
+# cle etrangere, donc apres les deux.
+from app.models.relance import Relance
+# Nomenclature de matricule : reference ``etablissements`` et ``utilisateurs``.
+from app.models.parametres_matricule import ParametresMatricule
 
 __all__ = [
     "Base",
@@ -68,4 +81,10 @@ __all__ = [
     "EtudiantImportRow",
     "DocumentOfficiel",
     "ConfigurationVersion",
+    "ReglesDeliberation",
+    "Deliberation",
+    "DeliberationDecision",
+    "Relance",
+    "ParametresMatricule",
+    "Semestre",
 ]

@@ -26,6 +26,8 @@ interface UE {
   filiere_id: string;
   niveau: string;
   semestre: string;
+  semestre_id?: string | null;
+  regime?: "semestrielle" | "annuelle";
   responsable?: string;
   nbMatieres?: number;
   matieres?: Matiere[];
@@ -67,6 +69,8 @@ export default function UnitesEnseignement() {
         filiere_id: u.filiere_id || "",
         niveau: u.niveau || "",
         semestre: u.semestre || "",
+        semestre_id: u.semestre_id ?? null,
+        regime: u.regime ?? "semestrielle",
         responsable: u.responsable || "",
         nbMatieres: Array.isArray(u.matieres) ? u.matieres.length : 0,
         matieres: u.matieres || [],
@@ -101,6 +105,8 @@ export default function UnitesEnseignement() {
       coefficient: Number(data.coefficient),
       heures: Number(data.heures),
       semestre: data.semestre || "",
+      semestre_id: data.semestre_id ?? null,
+      regime: data.regime ?? "semestrielle",
       niveau: data.niveau || "",
       responsable: data.responsable || "",
       filiere_id: data.filiere,
@@ -235,7 +241,24 @@ export default function UnitesEnseignement() {
                           <div>
                             <div className="font-medium">{ue.nom}</div>
                             <div className="text-sm text-muted-foreground">
-                              {ue.filiere} - {ue.niveau} - {ue.semestre}
+                              {ue.filiere} - {ue.niveau} -{" "}
+                              {/* Un libelle vide laisserait un tiret pendant et
+                                  ne dirait pas pourquoi. Une UE sans semestre est
+                                  hors de tout bulletin : cela se voit. */}
+                              {ue.semestre_id ? (
+                                ue.semestre || `Semestre ${ue.semestre_id}`
+                              ) : ue.regime === "annuelle" ? (
+                                /* Un enseignement annuel n'a pas de semestre
+                                    unique : il est sur tous. L'afficher « hors
+                                    semestre » serait faux. */
+                                <span className="text-primary">
+                                  annuel (tous semestres)
+                                </span>
+                              ) : (
+                                <span className="text-amber-600 dark:text-amber-400">
+                                  hors semestre
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>

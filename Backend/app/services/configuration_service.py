@@ -126,14 +126,34 @@ async def enregistrer_version(
     return version
 
 
+def normaliser(valeur: Any) -> Any:
+    """Forme canonique d'une valeur de configuration.
+
+    Une chaine vide et ``NULL`` veulent dire la meme chose — un champ non
+    renseigne. Sans cette normalisation, un formulaire qui renvoie ``""`` pour
+    un champ vide ferait croire a un changement a chaque enregistrement, et
+    l'historique se remplirait de faux changements de ``pays``.
+
+    Les espaces de bord sont retires : saisir ``" XOF "`` au clavier n'est pas
+    un changement de configuration.
+    """
+
+    if valeur is None:
+        return None
+    if isinstance(valeur, str):
+        nettoye = valeur.strip()
+        return nettoye or None
+    return valeur
+
+
 def comparer(
     etablissement: Etablissement, changement: Dict[str, Any]
 ) -> Dict[str, Any]:
     """Champs dont la valeur reellement change, avec l'ancienne valeur.
 
-    La comparaison est faite sur la valeur normalisee (chaines sans espaces
-    de bord), pas sur l'egalite brute : passer de ``"XOF"`` a ``" XOF "`` n'est
-    pas un changement de configuration.
+    La comparaison porte sur les valeurs normalisees, et la valeur enregistree
+    est elle aussi normalisee : la colonne ne se remplit donc jamais de
+    chaines vides melangees a des ``NULL``.
     """
 
     modifications: Dict[str, Any] = {}
@@ -141,12 +161,9 @@ def comparer(
         if champ not in CHAMPS_IDENTITE or nouvelle is None:
             continue
         avant = getattr(etablissement, champ, None)
-        if isinstance(avant, str) and isinstance(nouvelle, str):
-            identique = avant.strip() == nouvelle.strip()
-        else:
-            identique = avant == nouvelle
-        if not identique:
-            modifications[champ] = {"avant": avant, "apres": nouvelle}
+        apres = normaliser(nouvelle)
+        if normaliser(avant) != apres:
+            modifications[champ] = {"avant": avant, "apres": apres}
     return modifications
 
 

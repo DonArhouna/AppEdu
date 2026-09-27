@@ -8,7 +8,7 @@ Schémas Pydantic V2 pour la Structure Académique :
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -63,7 +63,19 @@ class UEBase(BaseModel):
     credits: int = Field(..., ge=0)
     coefficient: float = Field(..., ge=0)
     heures: int = Field(..., ge=0)
-    semestre: str
+    semestre: Optional[str] = Field(None, example="S1")
+    #: Rattachement structurel au semestre. Nullable : une UE creee avant la
+    #: gestion des semestres n'a pas de semestre, et une UE hors programme n'en
+    #: a pas toujours. Elle apparait alors sur aucun bulletin — c'est signale,
+    #: pas masque.
+    semestre_id: Optional[str] = None
+    #: ``semestrielle`` (defaut) ou ``annuelle``.
+    #:
+    #: Une UE annuelle est evaluee **une fois pour l'annee** : elle n'entre
+    #: dans aucune moyenne de semestre, et ne parait que du recapitulatif
+    #: annuel. Nullable pour la compatibilite : une requete d'API anterieure a
+    #: ce champ reste valide, et l'absence vaut « semestrielle ».
+    regime: Optional[Literal["semestrielle", "annuelle"]] = None
     niveau: str
     responsable: Optional[str] = Field(None, example="Prof. Koné")
 
@@ -81,6 +93,8 @@ class UEUpdate(BaseModel):
     coefficient: Optional[float] = None
     heures: Optional[int] = None
     semestre: Optional[str] = None
+    semestre_id: Optional[str] = None
+    regime: Optional[Literal["semestrielle", "annuelle"]] = None
     niveau: Optional[str] = None
     responsable: Optional[str] = None
     filiere_id: Optional[str] = None

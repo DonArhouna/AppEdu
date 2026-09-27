@@ -43,8 +43,6 @@ from app.schemas.pedagogie import (
     ExamenBase, ExamenCreate, ExamenResponse,
     NoteBase, NoteCreate, NoteBulkCreate, NoteBulkItem, NoteResponse,
     AbsenceBase, AbsenceCreate, AbsenceResponse,
-    DeliberationConfig, DeliberationSingleRequest, DeliberationPromotionRequest,
-    EtudiantDeliberationResult, PromotionDeliberationStats, PromotionDeliberationResult,
 )
 from app.schemas.finance import (
     FactureBase, FactureCreate, FactureResponse,
@@ -97,8 +95,8 @@ __all__ = [
     "ExamenBase", "ExamenCreate", "ExamenResponse",
     "NoteBase", "NoteCreate", "NoteBulkCreate", "NoteBulkItem", "NoteResponse",
     "AbsenceBase", "AbsenceCreate", "AbsenceResponse",
-    "DeliberationConfig", "DeliberationSingleRequest", "DeliberationPromotionRequest",
-    "EtudiantDeliberationResult", "PromotionDeliberationStats", "PromotionDeliberationResult",
+    
+    
     "FactureBase", "FactureCreate", "FactureResponse",
     "PaiementCreate", "PaiementResponse",
     "RecuResponse", "BalanceAgeeItem", "BalanceAgeeResponse",

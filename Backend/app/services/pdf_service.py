@@ -42,7 +42,12 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from app.core.document_types import CODE_CERTIFICAT, CODE_QUITUS, CODE_RELEVE
+from app.core.document_types import (
+    CODE_ATTESTATION_REUSSITE,
+    CODE_CERTIFICAT,
+    CODE_QUITUS,
+    CODE_RELEVE,
+)
 from app.services import branding_service
 
 #: Garde-fous du logo. Un logo trop grand ecraserait le titre du document ;
@@ -578,10 +583,133 @@ def _rendre_quitus(styles, contexte: Dict[str, Any]) -> tuple:
     return "Quitus financier", sous_titre, corps, mention, "Le Service de comptabilité"
 
 
+def _rendre_attestation_reussite(styles, contexte: Dict[str, Any]):
+    """Attestation de reussite : la decision du jury, rien d'autre.
+
+    Le document ne recapitule pas les notes : il atteste un **acte**, pas un
+    calcul. Ce qui figure est la decision, la date de la seance, la
+    composition du jury et le reglement applique — le strict necessaire pour
+    qu'un tiers puisse verifier sur quoi repose le verdict.
+    """
+
+    etudiant = contexte["etudiant"]
+    deliberation = contexte.get("deliberation")
+    session = contexte.get("session")
+
+    corps: List[Any] = []
+
+    corps.append(Paragraph("Décision du jury", styles["section"]))
+    corps.append(
+        _tableau_paires(
+            styles,
+            [
+                ("Statut", deliberation["statut"]),
+                ("Mention", deliberation.get("mention")),
+                ("Moyenne générale", f"{deliberation['moyenne_generale']:g}/20"),
+                (
+                    "Crédits validés",
+                    f"{deliberation['ects_acquis']} / {deliberation['ects_total']} ECTS",
+                ),
+            ],
+        )
+    )
+
+    corps.append(Paragraph("Séance de délibération", styles["section"]))
+    details_seance = [
+        ("Date de la séance", deliberation["date_deliberation"].strftime("%d/%m/%Y")),
+        ("Session", deliberation.get("session") or (session.nom if session else None)),
+        ("Année académique", deliberation.get("annee_academique")),
+        ("Promotion", deliberation.get("classe")),
+        ("Filière", deliberation.get("filiere")),
+    ]
+    corps.append(
+        _tableau_paires(
+            styles, [(libelle, valeur) for libelle, valeur in details_seance if valeur]
+        )
+    )
+
+    corps.append(Paragraph("Composition du jury", styles["section"]))
+    jury = [("Président de jury", deliberation["president"])]
+    for membre in deliberation.get("membres") or []:
+        nom = str(membre.get("nom") or "").strip()
+        qualite = str(membre.get("qualite") or "").strip()
+        jury.append(("Membre", f"{nom} — {qualite}" if qualite else nom))
+    corps.append(_tableau_paires(styles, jury))
+
+    corps.append(Paragraph("Règlement appliqué", styles["section"]))
+    regles = dict(contexte.get("regles") or {})
+    bareme = regles.get("bareme_mentions") or []
+    corps.append(
+        _tableau_paires(
+            styles,
+            [
+                (
+                    "Moyenne de validation",
+                    f"{regles.get('seuil_validation_moyenne')}/20",
+                ),
+                ("Note éliminatoire", f"en dessous de {regles.get('seuil_eliminatoire')}/20"),
+                (
+                    "Compensation entre UE",
+                    "autorisée" if regles.get("compensation_autorisee") else "non autorisée",
+                ),
+                (
+                    "Mentions",
+                    ", ".join(
+                        f"{e.get('libelle')} à {e.get('seuil_min')}/20"
+                        for e in sorted(
+                            bareme, key=lambda e: float(e.get("seuil_min", 0)), reverse=True
+                        )
+                    )
+                    or VALEUR_ABSENTE,
+                ),
+            ],
+        )
+    )
+
+    mention = (
+        "La présente attestation repose exclusivement sur la décision "
+        "consignée au procès-verbal de la séance de délibération citée ci-dessus. "
+        "Elle ne tient compte d'aucun élément postérieur à cette séance."
+    )
+    sous_titre = (
+        deliberation.get("annee_academique")
+        or (session.annee_academique if session else "Session")
+    )
+    return "Attestation de réussite", sous_titre, corps, mention, "Le président de jury"
+
+
+def _tableau_paires(styles, lignes: Sequence[tuple]) -> Table:
+    """Tableau « libelle / valeur » a deux colonnes, aligne a gauche."""
+
+    donnees = [
+        [
+            Paragraph(str(libelle), styles["cellule"]),
+            Paragraph(texte_ou_valeur(valeur), styles["cellule"]),
+        ]
+        for libelle, valeur in lignes
+    ]
+    tableau = Table(donnees, colWidths=[55 * mm, 119 * mm], hAlign="LEFT")
+    tableau.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("BACKGROUND", (0, 0), (0, -1), GRIS_CLAIR),
+                ("LINEBELOW", (0, 0), (-1, -2), 0.25, GRIS_BORD),
+            ]
+        )
+    )
+    return tableau
+
+
 _RENDUS = {
     CODE_CERTIFICAT: _rendre_certificat,
     CODE_RELEVE: _rendre_releve,
     CODE_QUITUS: _rendre_quitus,
+    CODE_ATTESTATION_REUSSITE: _rendre_attestation_reussite,
 }
 
 

@@ -11,7 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db, require_academic_read, require_academic_structure_write
-from app.models.structure import Campus, Departement, Filiere, UniteEnseignement, Matiere
+from app.models.structure import Campus, Departement, Filiere, UniteEnseignement, Matiere, Semestre
+from app.models.structure import REGIME_ANNUELLE, REGIME_SEMESTRIELLE, REGIMES
 from app.models.academic import Classe
 from app.schemas.structure import (
     CampusResponse, CampusCreate, CampusUpdate,
@@ -259,10 +260,62 @@ async def delete_filiere(filiere_id: str, db: AsyncSession = Depends(get_db), _a
 # ---------------------------------------------------------------------------
 # UNITÉS D'ENSEIGNEMENT (UE)
 # ---------------------------------------------------------------------------
+
+async def _verifier_semestre(db: AsyncSession, semestre_id: Optional[str]) -> None:
+    """Verifie qu'un semestre existe, avant d'y rattacher une UE.
+
+    La cle etrangere le finirait par rattraper, mais en 500 ``IntegrityError``,
+    apres avoir deja invalide la session en cours. L'institut ne saurait pas
+    quel semestre est en cause. Ici, le message le nomme.
+    """
+
+    if semestre_id is None:
+        return
+    existe = (
+        await db.execute(select(Semestre.id).where(Semestre.id == semestre_id))
+    ).scalars().first()
+    if existe is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Aucun semestre n'a l'identifiant '{semestre_id}'. "
+                "Créez-le depuis Paramétrage ▸ Structure ▸ Semestres, ou "
+                "laissez le champ vide pour une UE hors programme."
+            ),
+        )
+
+
+def _verifier_regime(regime: Optional[str]) -> str:
+    """Verifie le regime d'une UE, et dit ce qu'il implique.
+
+    Une UE annuelle se retrouve sur **tous** les semestres de la session : elle
+    n'a donc pas de semestre unique, et un semestre saisi avec elle serait
+    ignore — silencieusement, donc trompeur. Plutot que de l'effacer en
+    silence, on refuse en nommant l'option : l'institut a choisi un regime,
+    qu'il applique.
+
+    Le cas inverse, une UE semestrielle sans semestre, reste **accepte** : c'est
+    une UE hors programme ou pas encore classee, et elle est signalee ailleurs
+    plutot que bloquee ici.
+    """
+
+    regime = regime or REGIME_SEMESTRIELLE
+    if regime not in REGIMES:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Régime inconnu « {regime} ». Valeurs acceptées : "
+                f"{', '.join(REGIMES)}."
+            ),
+        )
+    return regime
+
+
 @router.get("/ues", response_model=List[UEResponse], summary="Lister les UEs")
 async def list_ues(
     filiere_id: Optional[str] = None,
     semestre: Optional[str] = None,
+    semestre_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     _auth=Depends(require_academic_read),
 ):
@@ -271,6 +324,11 @@ async def list_ues(
         stmt = stmt.where(UniteEnseignement.filiere_id == filiere_id)
     if semestre:
         stmt = stmt.where(UniteEnseignement.semestre == semestre)
+    if semestre_id:
+        # Filtre par identifiant, pas par etiquette : deux semestres peuvent
+        # porter la meme etiquette, et une UE doit se retrouver par le seul
+        # critere dont la reponse est non ambigue.
+        stmt = stmt.where(UniteEnseignement.semestre_id == semestre_id)
     stmt = stmt.order_by(UniteEnseignement.code)
     res = await db.execute(stmt)
     return res.scalars().all()
@@ -283,6 +341,22 @@ async def create_ue(payload: UECreate, db: AsyncSession = Depends(get_db), _admi
     if res_check.scalar_one_or_none():
         raise HTTPException(status_code=400, detail=f"Une UE avec le code '{payload.code}' existe déjà.")
 
+    await _verifier_semestre(db, payload.semestre_id)
+    regime = _verifier_regime(payload.regime)
+    if regime == REGIME_ANNUELLE and payload.semestre_id is not None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Un enseignement annuel figure sur tous les semestres : il ne "
+                "se rattache pas à un seul. Retirez le semestre, ou passez le "
+                "régime en « semestrielle » s'il ne se donne que sur un "
+                "semestre."
+            ),
+        )
+    # Une UE annuelle n'a pas d'etiquette de semestre non plus : elle en
+    # porterait une qui ne designerait aucun des semestres ou elle figure.
+    semestre = None if regime == REGIME_ANNUELLE else payload.semestre
+
     ue_id = payload.id or str(uuid.uuid4())
     ue = UniteEnseignement(
         id=ue_id,
@@ -291,7 +365,9 @@ async def create_ue(payload: UECreate, db: AsyncSession = Depends(get_db), _admi
         credits=payload.credits,
         coefficient=payload.coefficient,
         heures=payload.heures,
-        semestre=payload.semestre,
+        semestre=semestre,
+        semestre_id=payload.semestre_id,
+        regime=regime,
         niveau=payload.niveau,
         responsable=payload.responsable,
         filiere_id=payload.filiere_id
@@ -336,8 +412,35 @@ async def update_ue(ue_id: str, payload: UEUpdate, db: AsyncSession = Depends(ge
     if not ue:
         raise HTTPException(status_code=404, detail="UE introuvable.")
 
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    await _verifier_semestre(db, payload.semestre_id)
+
+    # La coherence se verifie sur l'etat **resultant**, pas sur la seule charge
+    # utile : basculer une UE en annuelle sans retirer son semestre laisserait
+    # une UE a la fois annuelle et rattachee a S1 — et son rattachement serait
+    # ignore a la lecture, sans un mot.
+    envoyes = payload.model_dump(exclude_unset=True)
+    semestre_resultant = (
+        payload.semestre_id if "semestre_id" in envoyes else ue.semestre_id
+    )
+    regime_resultant = _verifier_regime(
+        payload.regime if "regime" in envoyes else ue.regime
+    )
+    if regime_resultant == REGIME_ANNUELLE and semestre_resultant is not None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Un enseignement annuel figure sur tous les semestres : il ne "
+                "se rattache pas à un seul. Retirez le semestre, ou repassez le "
+                "régime en « semestrielle »."
+            ),
+        )
+
+    for k, v in envoyes.items():
         setattr(ue, k, v)
+    ue.regime = regime_resultant
+    if regime_resultant == REGIME_ANNUELLE:
+        ue.semestre = None
+        ue.semestre_id = None
     await db.commit()
 
     stmt = select(UniteEnseignement).options(selectinload(UniteEnseignement.matieres)).where(UniteEnseignement.id == ue_id)

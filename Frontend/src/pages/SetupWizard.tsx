@@ -121,13 +121,23 @@ export default function SetupWizard() {
     }
 
     setSubmitting(true);
+    // L'adresse ne concatene que des parties saisies. Concatener des champs
+    // vides produisait « Cocody, , » : une adresse malformee, imprimee sur
+    // chaque document officiel.
+    const adresseComplete = [etablissement.adresse, etablissement.ville, etablissement.pays]
+      .map((partie) => partie.trim())
+      .filter(Boolean)
+      .join(", ");
     const payload = {
       etablissement: {
         nom: etablissement.nom,
         code: etablissement.code,
-        adresse: `${etablissement.adresse}, ${etablissement.ville}, ${etablissement.pays}`,
+        adresse: adresseComplete,
         telephone: etablissement.telephone,
         email: etablissement.email,
+        // Le pays est une colonne de l'identite institutionnelle, pas une
+        // ligne de l'adresse : il doit etre exploitable separement.
+        pays: etablissement.pays,
         devise: etablissement.devise,
         license_key: licence.licenseKey,
       },
@@ -405,16 +415,22 @@ export default function SetupWizard() {
 
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-2 space-y-1">
-                    <Label className="text-xs">Adresse géographique</Label>
+                    <Label className="text-xs" htmlFor="setup-adresse">
+                      Adresse géographique
+                    </Label>
                     <Input
+                      id="setup-adresse"
                       value={etablissement.adresse}
                       onChange={(e) => setEtablissement({ ...etablissement, adresse: e.target.value })}
                       className="text-xs h-9"
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Devise monétaire *</Label>
+                    <Label className="text-xs" htmlFor="setup-devise">
+                      Devise monétaire *
+                    </Label>
                     <Input
+                      id="setup-devise"
                       value={etablissement.devise}
                       onChange={(e) => setEtablissement({ ...etablissement, devise: e.target.value.toUpperCase() })}
                       placeholder="Code de devise (ex. votre devise)"
@@ -423,6 +439,39 @@ export default function SetupWizard() {
                     />
                   </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs" htmlFor="setup-ville">
+                      Ville
+                    </Label>
+                    <Input
+                      id="setup-ville"
+                      value={etablissement.ville}
+                      onChange={(e) => setEtablissement({ ...etablissement, ville: e.target.value })}
+                      placeholder="Ex. Dakar"
+                      className="text-xs h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs" htmlFor="setup-pays">
+                      Pays *
+                    </Label>
+                    <Input
+                      id="setup-pays"
+                      value={etablissement.pays}
+                      onChange={(e) => setEtablissement({ ...etablissement, pays: e.target.value })}
+                      placeholder="Ex. Sénégal"
+                      className="text-xs h-9"
+                      required
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Ville et pays composent l'adresse postale, imprimée sur les
+                  documents officiels. Le pays reste modifiable dans Paramétrage
+                  Général, mais le saisir ici évite des attestations sans pays.
+                </p>
               </CardContent>
               <CardFooter className="flex justify-between border-t border-border/40 pt-4">
                 <Button variant="outline" onClick={() => setCurrentStep(1)} className="text-xs h-9">
@@ -430,8 +479,20 @@ export default function SetupWizard() {
                 </Button>
                 <Button
                   onClick={() => {
-                    if (!etablissement.nom || !etablissement.code || !etablissement.email || !etablissement.devise) {
-                      toast.error("Nom, code, email et devise de l'établissement sont obligatoires.");
+                    if (
+                      !etablissement.nom ||
+                      !etablissement.code ||
+                      !etablissement.email ||
+                      !etablissement.devise ||
+                      !etablissement.pays.trim()
+                    ) {
+                      // Le pays est exige ici plutot que laisse vide : il figure
+                      // sur les documents officiels, et une installation neuve
+                      // est le seul moment ou le saisir ne demande aucun effort
+                      // supplementaire.
+                      toast.error(
+                        "Nom, code, email, devise et pays de l'établissement sont obligatoires."
+                      );
                       return;
                     }
                     setCurrentStep(3);
@@ -603,6 +664,14 @@ export default function SetupWizard() {
                     <div>Code : <strong className="text-foreground">{etablissement.code}</strong></div>
                     <div>SuperAdmin : <strong className="text-foreground">{admin.email}</strong></div>
                     <div>Devise : <strong className="text-foreground">{etablissement.devise}</strong></div>
+                    {/* Le pays est annonce avant validation : il Sera imprime
+                        sur les documents officiels, et l'agent doit le voir. */}
+                    <div>Pays : <strong className="text-foreground">{etablissement.pays}</strong></div>
+                    {etablissement.adresse.trim() && (
+                      <div>
+                        Adresse : <strong className="text-foreground">{etablissement.adresse}</strong>
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>

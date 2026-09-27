@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 import {
-  LayoutDashboard, UserPlus, Users, FileCheck, GraduationCap,
+  LayoutDashboard, UserPlus, Users, FileCheck, GraduationCap, Scale, BellRing,
   BookOpen, Building2, MapPin, UserCog, BookMarked,
   CalendarDays, FileText, ClipboardCheck, ChevronDown,
   DollarSign, CreditCard, TrendingUp, BarChart3, School,
@@ -106,6 +106,7 @@ export const navigationSections: NavigationSection[] = [
     items: [
       { title: "Emplois du Temps", icon: CalendarDays, href: "/emplois-du-temps", description: "Plannings hebdomadaires et réservations" , requiredPermission: "pedagogy.read" },
       { title: "Carnet de Notes", icon: FileText, href: "/notes", description: "Saisie des notes, CC et examens" , requiredPermission: "pedagogy.read" },
+      { title: "Deliberation", icon: Scale, href: "/deliberation", description: "Seances de jury, decisions et proces-verbal" , requiredPermission: "pedagogy.write" },
       { title: "Suivi des Absences", icon: ClipboardCheck, href: "/absences", description: "Appels de classe et assiduité" , requiredPermission: "pedagogy.read" },
     ],
   },
@@ -132,6 +133,7 @@ export const navigationSections: NavigationSection[] = [
     items: [
       { title: "Frais de Scolarité", icon: DollarSign, href: "/frais-scolarite", description: "Grilles tarifaires, bourses et remises" , requiredPermission: "finance.read" },
       { title: "Factures", icon: FileText, href: "/factures", description: "Échéanciers et factures émises" , requiredPermission: "finance.read" },
+      { title: "Échéances & relances", icon: BellRing, href: "/relances", description: "Créances en retard et suivi des relances", requiredPermission: "finance.read" },
       { title: "Paiements", icon: CreditCard, href: "/paiements", description: "Encaissements, virements et mobile money" , requiredPermission: "finance.read" },
       { title: "Reporting Financier", icon: TrendingUp, href: "/reporting-financier", description: "Balance âgée, trésorerie et bilans" , requiredPermission: "finance.read" },
     ],

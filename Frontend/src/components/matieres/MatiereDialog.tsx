@@ -31,6 +31,7 @@ interface UE {
   filiere?: string;
   niveau?: string;
   semestre?: string;
+  semestre_id?: string | null;
 }
 
 interface FiliereOption {
@@ -93,6 +94,12 @@ export function MatiereDialog({ open, onOpenChange, onSave, matiere, fixedType, 
     e.preventDefault();
     onSave(formData);
   };
+
+  /**
+   * L'UE parente, seule source du semestre : la table `matieres` n'a aucune
+   * colonne `semestre`, et l'API ignore toute valeur envoyee pour une matiere.
+   */
+  const ueParente = ues.find((item) => item.id === formData.ueId);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -230,8 +237,38 @@ export function MatiereDialog({ open, onOpenChange, onSave, matiere, fixedType, 
                 <Input id="niveau" value={formData.niveau || ""} onChange={(e) => setFormData({ ...formData, niveau: e.target.value })} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="semestre">Semestre *</Label>
-                <Input id="semestre" value={formData.semestre || ""} onChange={(e) => setFormData({ ...formData, semestre: e.target.value })} required />
+                <Label htmlFor="semestre">Semestre</Label>
+                {/* Le semestre appartient a l'UE, pas a la matiere : la table
+                    `matieres` n'a aucune colonne `semestre`, et l'API ignore
+                    toute valeur envoyee ici. Un champ editable promettrait donc
+                    un enregistrement que le serveur jette — et l'agent verrait
+                    « S1 » sur l'ecran quand le bulletin afficherait le semestre
+                    de l'UE. On affiche, on ne demande rien. */}
+                <div
+                  id="semestre"
+                  className="flex h-9 items-center rounded-md border bg-muted/40 px-3 text-sm"
+                >
+                  {ueParente ? (
+                    ueParente.semestre_id ? (
+                      ueParente.semestre || `Semestre ${ueParente.semestre_id}`
+                    ) : (
+                      <span className="text-amber-600 dark:text-amber-400">
+                        hors semestre
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-muted-foreground">
+                      Choisissez d'abord l'UE parente
+                    </span>
+                  )}
+                </div>
+                {ueParente && !ueParente.semestre_id && (
+                  <p className="text-xs text-muted-foreground">
+                    Son UE n'est rattachée à aucun semestre : cette matière
+                    n'apparaîtra sur aucun bulletin. Rattachez l'UE depuis
+                    Paramètres ▸ Structure ▸ Unités d'enseignement.
+                  </p>
+                )}
               </div>
             </div>
 

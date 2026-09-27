@@ -10,14 +10,6 @@ Schémas Pydantic V2 pour la Pédagogie :
 from datetime import date, datetime
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
-from app.services.deliberation_engine import (
-    DeliberationConfig,
-    ECUEResult,
-    UEResult,
-    EtudiantDeliberationResult,
-    PromotionDeliberationStats,
-    PromotionDeliberationResult,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -161,11 +153,3 @@ class AbsenceResponse(AbsenceBase):
 # ---------------------------------------------------------------------------
 # Requêtes de Délibération
 # ---------------------------------------------------------------------------
-class DeliberationSingleRequest(BaseModel):
-    etudiant: dict
-    config: Optional[DeliberationConfig] = None
-
-
-class DeliberationPromotionRequest(BaseModel):
-    etudiants: List[dict]
-    config: Optional[DeliberationConfig] = None

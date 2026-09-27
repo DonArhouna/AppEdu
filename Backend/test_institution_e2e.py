@@ -79,6 +79,11 @@ TEACHER_EMAIL = "enseignant.institution@ecole-ci.org"
 TEACHER_PASSWORD = "Institution-Teacher-2026!"
 
 NOM_INITIAL = "Institut Institution E2E"
+#: Pays saisi au setup. Valeur volontairement distincte de tout defaut
+#: historique : la colonne n'a pas de valeur par defaut, mais un nom de pays
+#: deja employe ailleurs dans la base rendrait le test incapable de prouver
+#: que la valeur vient bien de la requete.
+PAYS_INITIAL = "Sénégal"
 ADRESSE_INITIALE = ""
 
 
@@ -188,6 +193,9 @@ async def _run() -> None:
                     "adresse": ADRESSE_INITIALE,
                     "telephone": "",
                     "email": "contact@institution-e2e.org",
+                    # Le pays saisi au setup doit se retrouver dans
+                    # l'identite : c'est lui qui figure sur les documents.
+                    "pays": PAYS_INITIAL,
                     "devise": "XOF",
                 },
                 "admin": {
@@ -200,6 +208,44 @@ async def _run() -> None:
         )
         assert setup.status_code in (200, 201), f"Setup: {setup.status_code} {setup.text}"
         admin = await _login(client, ADMIN_EMAIL, ADMIN_PASSWORD)
+
+        # Le pays saisi au Setup Wizard doit etre **persiste**, pas seulement
+        # accepte. Une installation neuve sans pays produirait des documents
+        # officiels incomplets : c'est le defaut que ce controle verrouille.
+        identite = await client.get("/api/v1/institution/configuration", headers=admin)
+        assert identite.status_code == 200, identite.text
+        assert identite.json()["pays"] == PAYS_INITIAL, (
+            "Le pays saisi au Setup Wizard n'a pas ete enregistre : "
+            f"{identite.json().get('pays')!r} au lieu de {PAYS_INITIAL!r}. "
+            "Les documents officiels sortiraient sans pays."
+        )
+        print(f"  [OK] Pays du setup persiste : {PAYS_INITIAL}")
+
+        # ------------------------------------------------------------------
+        # Le contexte academique sur une instance qui vient d'etre creee
+        # ------------------------------------------------------------------
+        # A cet instant il n'existe **aucune** session : c'est l'etat exact
+        # d'une installation sortie du Setup Wizard. Le contexte doit alors
+        # repondre « pas configure », pas « conflit » : un 409 faisait
+        # echouer l'ecran charge de fixer precisement ce qui manque, et
+        # rendait `configuree` inatteignable.
+        contexte = await client.get("/api/v1/context/academique", headers=admin)
+        assert contexte.status_code == 200, (
+            f"Le contexte academique repond {contexte.status_code} sur une "
+            f"instance neuve : {contexte.text[:200]}"
+        )
+        corps_contexte = contexte.json()
+        assert corps_contexte["configuree"] is False, corps_contexte
+        assert corps_contexte["annee_academique"] == "", corps_contexte
+        assert corps_contexte["session_id"] is None, corps_contexte
+        print("  [OK] Instance neuve : contexteacademique repond « non configure ».")
+
+        # La session active non plus n'existe pas — un 404, que le tableau de
+        # bord doit savoir lire comme un etat et non comme une panne.
+        session_active = await client.get("/api/v1/sessions/active", headers=admin)
+        assert session_active.status_code == 404, session_active.text
+        assert "session" in session_active.json()["detail"].lower(), session_active.text
+        print("  [OK] Session active absente : 404 explicite, pas de session inventee.")
 
         for email, password, role in (
             (SECRETARY_EMAIL, SECRETARY_PASSWORD, "SECRETARIAT"),

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Save } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Save, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { pedagogieApi, sessionsApi, structureApi, extractErrorMessage } from "@/services/apiClient";
+import ImportNotesDialog from "@/components/notes/ImportNotesDialog";
 import type { Note as NoteApi } from "@/services/apiTypes";
 
 interface StudentOption {
@@ -41,6 +42,7 @@ const Notes = () => {
   const [catalogVersion, setCatalogVersion] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [importOuvert, setImportOuvert] = useState(false);
 
   const loadCatalogs = async () => {
     setLoading(true);
@@ -149,6 +151,10 @@ const Notes = () => {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div><h1 className="text-3xl font-bold text-foreground">Carnet de notes</h1><p className="mt-1 text-muted-foreground">Saisie des notes via l'API, sans lignes de démonstration.</p></div>
+        <Button variant="outline" onClick={() => setImportOuvert(true)}>
+          <Upload className="mr-2 h-4 w-4" />
+          Importer des notes
+        </Button>
         <Button variant="outline" onClick={loadCatalogs} disabled={loading}><RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />Actualiser</Button>
       </div>
 
@@ -184,8 +190,21 @@ const Notes = () => {
       </Card>}
 
       {!selectedMatiere || !selectedSession ? <Card><CardContent className="py-12 text-center text-sm text-muted-foreground"><CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />Sélectionnez une matière et une session pour commencer.</CardContent></Card> : null}
+
+      {/* L'import recharge tout le carnet : `loadCatalogs` rappelle `loadRows`,
+          qui relit les notes de la matiere et de la session affichees. */}
+      <ImportNotesDialog
+        ouvert={importOuvert}
+        onClose={() => setImportOuvert(false)}
+        onImporte={loadCatalogs}
+        matieres={matieres}
+        sessions={sessions}
+        matiereCourante={selectedMatiere}
+        sessionCourante={selectedSession}
+      />
     </div>
   );
 };
+
 
 export default Notes;

@@ -25,6 +25,41 @@ export interface SetupStatus {
   details?: string | null;
 }
 
+/**
+ * Identité et compte créés par le Setup Wizard.
+ *
+ * Le type existe pour que l'API et le wizard ne puissent plus diverger en
+ * silence : un payload typé `unknown` avait laissé passer un `pays` jamais
+ * transmis, et l'adresse se retrouvait assemblée avec des champs vides.
+ */
+export interface SetupInitPayload {
+  etablissement: {
+    nom: string;
+    code: string;
+    adresse?: string | null;
+    telephone?: string | null;
+    email: string;
+    /** Figuré sur les documents officiels. */
+    pays?: string | null;
+    devise: string;
+    license_key?: string | null;
+  };
+  admin: {
+    nom: string;
+    prenom: string;
+    email: string;
+    password: string;
+    telephone?: string | null;
+  };
+  database?: {
+    host?: string;
+    port?: number;
+    user?: string;
+    password?: string;
+    database?: string;
+  } | null;
+}
+
 export interface AuthUser {
   id: number;
   email: string;
@@ -477,6 +512,31 @@ export interface Enrollment {
   classe?: AcademicClass | null;
 }
 
+export interface Semestre {
+  id: string;
+  session_id: string;
+  numero: number;
+  libelle: string;
+  date_debut: string | null;
+  date_fin: string | null;
+  actif: boolean;
+  /** UE rattachees a ce semestre. */
+  nb_unites: number;
+  /** Etudiants inscrits sur la session entiere, pas sur ce seul semestre. */
+  nb_etudiants: number;
+}
+
+export interface SemestreRepartition {
+  session_id: string;
+  session_nom: string;
+  semestres: Semestre[];
+  /**
+   * UE sans rattachement. C'est ce compte qui dit a l'agent qu'une matiere
+   * sortira du bulletin : il est annonce, pas laisse disparaitre.
+   */
+  unites_sans_semestre: number;
+}
+
 export interface TeachingUnit {
   id: string;
   code: string;
@@ -486,7 +546,19 @@ export interface TeachingUnit {
   credits: number;
   coefficient: number;
   heures: number;
+  /** Libelle d'affichage, choisi par l'institut. */
   semestre: string;
+  /** Rattachement structurel. Nullable : une UE creee avant la gestion des
+   *  semestre, ou un enseignement annuel, n'en a pas. */
+  semestre_id?: string | null;
+  /**
+   * `semestrielle` (defaut) ou `annuelle`.
+   *
+   * Un enseignement annuel se retrouve sur **tous** les semestres de la session
+   * et se donne sur chacun : il n'a donc pas de semestre unique, et il n'en
+   * porte pas d'etiquette.
+   */
+  regime?: "semestrielle" | "annuelle";
   niveau: string;
   responsable?: string | null;
   matieres?: Matiere[];
@@ -824,4 +896,290 @@ export interface ConfigurationVersion {
   modifie_par_email: string | null;
   created_at: string;
   instantane: Record<string, unknown>;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Deliberation et jury                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Regles de deliberation en vigueur.
+ *
+ * `confirmee` distingue le reglement de l'institut d'une valeur de depart
+ * reprise du moteur : une seance de jury ne devrait pas s'appuyer sur des
+ * regles que personne n'a validees.
+ */
+export interface ReglesDeliberation {
+  seuil_validation_moyenne: number;
+  seuil_eliminatoire: number;
+  seuil_rattrapage_minimale: number;
+  seuil_passage_conditionnel_ects: number;
+  compensation_autorisee: boolean;
+  bareme_mentions: { libelle: string; seuil_min: number }[];
+  confirmee: boolean;
+  confirme_par: string | null;
+  confirme_le: string | null;
+}
+
+export interface MembreJury {
+  nom: string;
+  qualite?: string | null;
+}
+
+/** Une seance de jury, et son etat. */
+export interface Deliberation {
+  id: string;
+  classe_id: string;
+  classe_nom: string | null;
+  session_id: string;
+  session_nom: string | null;
+  date_deliberation: string;
+  lieu: string | null;
+  president: string;
+  membres: MembreJury[];
+  statut: "brouillon" | "close";
+  regles: Record<string, unknown>;
+  close_le: string | null;
+  created_at: string | null;
+  nb_inscrits: number;
+  nb_decisions: number;
+}
+
+/**
+ * Ce que le moteur propose pour un etudiant.
+ *
+ * Ce n'est **pas** une decision : `decision_statut` reste null tant que le
+ * jury n'a rien consigne. L'ecart entre les deux est ce que le jury doit
+ * motiver.
+ */
+export interface PropositionEtudiant {
+  etudiant_id: string;
+  matricule: string;
+  nom: string;
+  prenom: string;
+  filiere: string | null;
+  moyenne_generale: number;
+  ects_acquis: number;
+  ects_total: number;
+  proposition_statut: string;
+  proposition_mention: string | null;
+  moyennes_ue: Record<string, { ue: string; code: string; ects: number; moyenne: number }>;
+  notes_eliminatoires: { matiere: string; note: number }[];
+  avertissements: string[];
+  decision_statut: string | null;
+  decision_mention: string | null;
+  motif_ecart: string | null;
+  ecart: boolean;
+}
+
+export interface DecisionDeliberation {
+  etudiant_id: string;
+  matricule: string | null;
+  nom: string | null;
+  prenom: string | null;
+  proposition_statut: string;
+  proposition_mention: string | null;
+  statut: string;
+  mention: string | null;
+  motif_ecart: string | null;
+  ecart: boolean;
+  moyenne_generale: number;
+  ects_acquis: number;
+  ects_total: number;
+  decide_le: string | null;
+}
+
+export interface DeliberationDetail extends Deliberation {
+  propositions: PropositionEtudiant[];
+  decisions: DecisionDeliberation[];
+  avertissements: string[];
+}
+
+/* -------------------------------------------------------------------------- */
+/* Relances de facturation                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** Une facture echue non soldee, au moment de la lecture. */
+export interface CreanceEtudiant {
+  facture_id: string;
+  numero: string;
+  date_echeance: string;
+  description: string | null;
+  montant_total: number;
+  montant_regle: number;
+  reste: number;
+  retard_jours: number;
+}
+
+/** La derniere relance connue, pour eviter de relancer deux fois de suite. */
+export interface RelanceAnterieure {
+  niveau: number;
+  date_relance: string;
+  moyen: string;
+  montant_reclame: number;
+}
+
+/** Un etudiant dont la dette merite un suivi. */
+export interface EtudiantARelancer {
+  etudiant_id: string;
+  matricule: string;
+  nom: string;
+  prenom: string;
+  filiere: string | null;
+  telephone: string | null;
+  email: string | null;
+  creances: CreanceEtudiant[];
+  nb_creances: number;
+  total_du: number;
+  retard_jours: number;
+  anciennete_jours: number;
+  /** Numero de la prochaine relance si elle est faite aujourd'hui. */
+  niveau_suivant: number;
+  nb_relances: number;
+  derniere_relance: RelanceAnterieure | null;
+  jours_depuis_derniere: number | null;
+}
+
+/**
+ * Vue d'ensemble des creances a suivre.
+ *
+ * Les paliers reprennent ceux de la balance agee : les deux vues doivent
+ * concorder, et le backend le verifie.
+ */
+export interface SyntheseRelances {
+  date_calcul: string;
+  devise: string;
+  nb_etudiants: number;
+  nb_creances: number;
+  total_du: number;
+  retard_1_30: number;
+  retard_31_60: number;
+  retard_plus_60: number;
+  items: EtudiantARelancer[];
+}
+
+/**
+ * Une relance consignee, avec l'instantane de ce qui etait reclame.
+ *
+ * `solde_apres` reste `null` tant qu'aucun encaissement n'a suivi : une
+ * relance efficace n'est pas un solde sur du papier. C'est ce qui distingue
+ * « on a relance » de « la relance a marche ».
+ */
+export interface Relance {
+  id: string;
+  etudiant_id: string;
+  matricule: string | null;
+  nom: string | null;
+  prenom: string | null;
+  session_id: string | null;
+  niveau: number;
+  date_relance: string;
+  moyen: string;
+  montant_reclame: number;
+  retard_jours: number;
+  message: string | null;
+  solde_apres: number | null;
+  relance_par_email: string | null;
+  created_at: string | null;
+  nb_factures: number;
+  factures_concernees: Record<string, unknown>[];
+  resolue: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Nomenclature de matricule                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** Regle de fabrication des matricules, propre a l'etablissement. */
+export interface MatriculeParametres {
+  modele: string;
+  largeur_numero: number;
+  demarrage: number;
+  /** Format historique, pour signaler ce qui a change. */
+  modele_depart: string;
+  /** Exemple produit par le serveur : c'est lui qui fait foi. */
+  exemple: string;
+  personnalisee: boolean;
+  configuree: boolean;
+  maj_par_email: string | null;
+  maj_le: string | null;
+}
+
+/** Un jeton accepte dans le modele. */
+export interface JetonMatricule {
+  jeton: string;
+  libelle: string;
+  exemple: string;
+}
+
+export interface MatriculeParametresMaj {
+  modele: string;
+  largeur_numero: number;
+  demarrage: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Import de notes                                                             */
+/* -------------------------------------------------------------------------- */
+
+/** Une colonne du tableur, interpretee comme evaluation. */
+export interface ColonneEvaluation {
+  nom: string;
+  /** Position dans le fichier, telle que l'agent la voit. */
+  colonne: number;
+  coefficient: number;
+  /** `CC` ou `Examen Final` : ce que le serveur en fera. */
+  type: string;
+  /** false si l'evaluation existe deja pour cette matiere et cette session. */
+  nouvelle: boolean;
+}
+
+export interface LigneRapportNotes {
+  numero: number;
+  matricule: string | null;
+  nom_complet: string;
+  etudiant_id: string | null;
+  /**
+   * Notes lues, indexees par evaluation normalisee. Une valeur absente
+   * signifie « non evalue » — ce qui n'est pas un zero.
+   */
+  notes: Record<string, number | null>;
+  a_creer: number;
+  a_modifier: number;
+  erreurs: string[];
+  /** Ligne vide du tableur, ou entierement sans note. */
+  ignoree: boolean;
+}
+
+export interface RapportImportNotes {
+  evaluations: ColonneEvaluation[];
+  lignes: LigneRapportNotes[];
+  classe: { id: string; nom: string; code: string | null } | null;
+  matiere: { id: string; nom: string; code: string } | null;
+  session: { id: string; nom: string } | null;
+  resume: Record<string, number>;
+  /** false si aucune note ne peut etre enregistree. */
+  importable: boolean;
+}
+
+export interface BilanImportNotes {
+  evaluations: number;
+  lignes: number;
+  total_notes: number;
+  notes_creees: number;
+  notes_modifiees: number;
+  lignes_en_erreur: number;
+  total_erreurs: number;
+  creees: number;
+  modifiees: number;
+  lignes_ignorees: number;
+}
+
+/** Description du format attendu, servie par le backend. */
+export interface ModeleImportNotes {
+  colonnes_identite: Record<string, string>;
+  colonnes_evaluation: string;
+  exemple_entetes: string[];
+  regles: string[];
+  fichiers_acceptes: string;
 }

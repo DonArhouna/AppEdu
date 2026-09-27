@@ -15,7 +15,7 @@
  *   émet, même s'il ne peut pas la modifier.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Building2,
@@ -66,6 +66,18 @@ const LIBELLES: Record<string, string> = {
   logo: "Logo",
 };
 
+/**
+ * Retour d'enregistrement, affiche **dans** le formulaire.
+ *
+ * Un toast seul ne suffit pas : il disparait, et l'utilisateur qui le rate
+ * conclut que le clic a ete ignore. Le message reste jusqu'a la prochaine
+ * saisie.
+ */
+type RetourEnregistrement =
+  | { nature: "modifie"; version: number; champs: string[] }
+  | { nature: "inchange" }
+  | { nature: "erreur"; message: string };
+
 interface ChampsEditables {
   nom: string;
   sigle: string;
@@ -104,6 +116,9 @@ function decrire(champ: string, valeur: ChampModifie): string {
   if (champ === "logo") return `${libelle} : ${avant} → ${apres}`;
   return `${libelle} : « ${avant} » → « ${apres} »`;
 }
+
+/** Libelle affichable d'un champ de configuration. */
+const libelleChamp = (cle: string): string => LIBELLES[cle] ?? cle;
 
 const dateFr = (iso: string): string => {
   const date = new Date(iso);
@@ -166,18 +181,36 @@ interface InstitutionConfigCardProps {
 const InstitutionConfigCard = ({ canEdit, onSaved }: InstitutionConfigCardProps) => {
   const [config, setConfig] = useState<InstitutionConfig | null>(null);
   const [champs, setChamps] = useState<ChampsEditables>(VIDES);
+  // Toute saisie annule le retour affiche : un « version enregistree » qui
+  // resterait a l'ecran pendant qu'on retouche un champ serait faux.
+  const majChamp = useCallback(
+    (cle: keyof ChampsEditables, valeur: string) => {
+      setChamps((actuel) => ({ ...actuel, [cle]: valeur }));
+      setRetour(null);
+      setErreursChamps((actuelles) => {
+        if (!(cle in actuelles)) return actuelles;
+        const suivante = { ...actuelles };
+        delete suivante[cle];
+        return suivante;
+      });
+    },
+    []
+  );
   const [versions, setVersions] = useState<ConfigurationVersion[]>([]);
+  const [erreurVersions, setErreurVersions] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [removingLogo, setRemovingLogo] = useState(false);
   const [erreursChamps, setErreursChamps] = useState<Record<string, string>>({});
+  const [retour, setRetour] = useState<RetourEnregistrement | null>(null);
   const inputFichier = useRef<HTMLInputElement>(null);
 
   const charger = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setErreurVersions(null);
     const [configResult, versionsResult] = await Promise.all([
       institutionApi.getConfig(),
       institutionApi.getVersions(),
@@ -194,7 +227,21 @@ const InstitutionConfigCard = ({ canEdit, onSaved }: InstitutionConfigCardProps)
       setConfig(configResult.data);
       setChamps(versChamps(configResult.data));
     }
-    setVersions(versionsResult.data ?? []);
+    // L'historique se distingue de l'identite : un chargement qui echoue ne
+    // doit pas se lire comme « personne n'a jamais modifie la configuration ».
+    // Un etat vide affirme une absence de donnees ; ici, c'est une panne, et
+    // l'agent doit le savoir avant de conclure quoi que ce soit.
+    if (versionsResult.error || !versionsResult.data) {
+      setErreurVersions(
+        extractErrorMessage(
+          versionsResult.error,
+          "L'historique des versions n'a pas pu être chargé."
+        )
+      );
+      setVersions([]);
+    } else {
+      setVersions(versionsResult.data);
+    }
     setLoading(false);
   }, []);
 
@@ -209,6 +256,25 @@ const InstitutionConfigCard = ({ canEdit, onSaved }: InstitutionConfigCardProps)
     config?.version ?? 0
   );
 
+  /**
+   * Champs dont la valeur saisi differe de l'etat enregistre.
+   *
+   * La comparaison se fait sur la valeur **normalisee**, comme le serveur :
+   * un espace de bord ou un champ vide ne doit pas signaler une saisie en
+   * attente, sinon l'indicateur mentirait en permanence.
+   */
+  const champsModifies = useMemo(() => {
+    if (!config) return [] as string[];
+    const enregistre = versChamps(config);
+    const ecarts: string[] = [];
+    (Object.keys(enregistre) as (keyof ChampsEditables)[]).forEach((cle) => {
+      const avant = (enregistre[cle] ?? "").trim().toUpperCase();
+      const apres = (champs[cle] ?? "").trim().toUpperCase();
+      if (avant !== apres) ecarts.push(cle);
+    });
+    return ecarts;
+  }, [champs, config]);
+
   const valider = (): boolean => {
     const erreurs: Record<string, string> = {};
     if (champs.nom.trim().length < 2) erreurs.nom = "Le nom doit comporter au moins 2 caractères.";
@@ -221,12 +287,19 @@ const InstitutionConfigCard = ({ canEdit, onSaved }: InstitutionConfigCardProps)
     return Object.keys(erreurs).length === 0;
   };
 
-  const enregistrer = async () => {
+  const enregistrer = async (evenement?: React.FormEvent) => {
+    // Entree dans un champ = enregistrer. Sans cela, la saisie la plus
+    // naturelle ne declenchait rien, sans le moindre message.
+    evenement?.preventDefault();
     if (!valider()) {
-      toast.error("Corrigez les champs signalés avant d'enregistrer.");
+      setRetour({
+        nature: "erreur",
+        message: "Corrigez les champs signalés avant d'enregistrer.",
+      });
       return;
     }
     setSaving(true);
+    setRetour(null);
     const resultat = await institutionApi.updateConfig({
       nom: champs.nom.trim(),
       sigle: champs.sigle.trim(),
@@ -241,14 +314,25 @@ const InstitutionConfigCard = ({ canEdit, onSaved }: InstitutionConfigCardProps)
     setSaving(false);
 
     if (resultat.error || !resultat.data) {
-      toast.error(
-        extractErrorMessage(resultat.error, "La configuration n'a pas pu être enregistrée.")
+      const message = extractErrorMessage(
+        resultat.error, "La configuration n'a pas pu être enregistrée."
       );
+      setRetour({ nature: "erreur", message });
+      toast.error(message);
       return;
     }
-    if (Object.keys(resultat.data.modifications).length === 0) {
+    const touches = Object.keys(resultat.data.modifications);
+    if (touches.length === 0) {
+      // Le serveur a compare champ par champ et n'a rien vu. Le dire
+      // explicitement evite que l'utilisateurcroie a un clic ignore.
+      setRetour({ nature: "inchange" });
       toast.info("Aucun changement : la configuration est déjà à jour.");
     } else {
+      setRetour({
+        nature: "modifie",
+        version: resultat.data.version,
+        champs: touches,
+      });
       toast.success(`Configuration enregistrée (version ${resultat.data.version}).`);
     }
     await charger();
@@ -351,7 +435,10 @@ const InstitutionConfigCard = ({ canEdit, onSaved }: InstitutionConfigCardProps)
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-6">
+        <CardContent>
+        {/* Vrai formulaire : Entree dans un champ enregistre. Sans cela, la
+            saisie la plus naturelle ne declenchait rien, sans message. */}
+        <form className="space-y-6" onSubmit={enregistrer} noValidate>
           {!canEdit && (
             <Alert>
               <AlertCircle className="h-4 w-4" />
@@ -367,7 +454,7 @@ const InstitutionConfigCard = ({ canEdit, onSaved }: InstitutionConfigCardProps)
             <Champ
               label="Nom"
               value={champs.nom}
-              onChange={(valeur) => setChamps((c) => ({ ...c, nom: valeur }))}
+              onChange={(valeur) => majChamp("nom", valeur)}
               disabled={!canEdit}
               erreur={erreursChamps.nom}
               requis
@@ -375,7 +462,7 @@ const InstitutionConfigCard = ({ canEdit, onSaved }: InstitutionConfigCardProps)
             <Champ
               label="Sigle"
               value={champs.sigle}
-              onChange={(valeur) => setChamps((c) => ({ ...c, sigle: valeur }))}
+              onChange={(valeur) => majChamp("sigle", valeur)}
               disabled={!canEdit}
               erreur={erreursChamps.sigle}
               requis
@@ -383,7 +470,7 @@ const InstitutionConfigCard = ({ canEdit, onSaved }: InstitutionConfigCardProps)
             <Champ
               label="Devise"
               value={champs.devise}
-              onChange={(valeur) => setChamps((c) => ({ ...c, devise: valeur }))}
+              onChange={(valeur) => majChamp("devise", valeur)}
               disabled={!canEdit}
               erreur={erreursChamps.devise}
               requis
@@ -392,43 +479,95 @@ const InstitutionConfigCard = ({ canEdit, onSaved }: InstitutionConfigCardProps)
             <Champ
               label="Adresse"
               value={champs.adresse}
-              onChange={(valeur) => setChamps((c) => ({ ...c, adresse: valeur }))}
+              onChange={(valeur) => majChamp("adresse", valeur)}
               disabled={!canEdit}
             />
             <Champ
               label="Téléphone"
               value={champs.telephone}
-              onChange={(valeur) => setChamps((c) => ({ ...c, telephone: valeur }))}
+              onChange={(valeur) => majChamp("telephone", valeur)}
               disabled={!canEdit}
             />
             <Champ
               label="Pays"
               value={champs.pays}
-              onChange={(valeur) => setChamps((c) => ({ ...c, pays: valeur }))}
+              onChange={(valeur) => majChamp("pays", valeur)}
               disabled={!canEdit}
             />
             <Champ
               label="Courriel"
               type="email"
               value={champs.email}
-              onChange={(valeur) => setChamps((c) => ({ ...c, email: valeur }))}
+              onChange={(valeur) => majChamp("email", valeur)}
               disabled={!canEdit}
               erreur={erreursChamps.email}
             />
           </div>
 
           {canEdit && (
-            <div className="flex justify-end">
-              <Button onClick={enregistrer} disabled={saving || uploading}>
-                {saving ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Save className="mr-2 h-4 w-4" />
-                )}
-                Enregistrer l'identité
-              </Button>
+            <div className="space-y-3">
+              {/* Saisie non enregistree : sans cet indicateur, impossible de
+                  distinguer « j'ai tape et ce n'est pas passe » de
+                  « c'est enregistre ». */}
+              {champsModifies.length > 0 && (
+                <div
+                  role="status"
+                  className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm"
+                >
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    Modifications non enregistrées sur{" "}
+                    <strong>{champsModifies.map(libelleChamp).join(", ")}</strong>.
+                    Appuyez sur <kbd>Entrée</kbd> ou sur « Enregistrer ».
+                  </span>
+                </div>
+              )}
+
+              {/* Retour persistant : un toast seul disparait, et l'utilisateur
+                  qui le rate conclut que le clic a ete ignore. */}
+              {retour?.nature === "inchange" && (
+                <div
+                  role="status"
+                  className="rounded-lg border border-muted bg-muted/40 px-3 py-2 text-sm"
+                >
+                  Aucun changement enregistré : les valeurs envoyées sont
+                  identiques à celles déjà enregistrées. Rien n'a été modifié.
+                </div>
+              )}
+              {retour?.nature === "modifie" && (
+                <div
+                  role="status"
+                  className="rounded-lg border border-emerald-500/40 bg-emerald-500/5 px-3 py-2 text-sm"
+                >
+                  Version <strong>{retour.version}</strong> enregistrée —{" "}
+                  {retour.champs.map(libelleChamp).join(", ")}. L'historique
+                  ci-dessous conserve l'ancienne valeur.
+                </div>
+              )}
+              {retour?.nature === "erreur" && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                >
+                  {retour.message}
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                {/* type="submit" : le bouton declenche le formulaire, donc
+                    Entree et le clic empruntent le meme chemin. */}
+                <Button type="submit" disabled={saving || uploading}>
+                  {saving ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                  Enregistrer l'identité
+                </Button>
+              </div>
             </div>
           )}
+        </form>
         </CardContent>
       </Card>
 
@@ -547,7 +686,22 @@ const InstitutionConfigCard = ({ canEdit, onSaved }: InstitutionConfigCardProps)
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {versions.length === 0 ? (
+          {erreurVersions ? (
+            <div
+              role="alert"
+              data-testid="erreur-historique"
+              className="rounded-lg border border-destructive/40 bg-destructive/5 p-4"
+            >
+              <p className="flex items-center gap-2 font-medium text-destructive">
+                <AlertCircle className="h-4 w-4" /> Historique indisponible
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {erreurVersions} L'historique affiché est incomplet, pas vide :
+                aucune conclusion ne peut être tirée sur les modifications
+                passées tant qu'il n'est pas chargé.
+              </p>
+            </div>
+          ) : versions.length === 0 ? (
             <div className="rounded-lg border border-dashed py-10 text-center">
               <History className="mx-auto h-8 w-8 text-muted-foreground" />
               <p className="mt-3 font-medium">Aucune modification enregistrée</p>

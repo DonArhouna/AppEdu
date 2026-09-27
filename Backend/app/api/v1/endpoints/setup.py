@@ -128,6 +128,7 @@ async def initialize_system(
         adresse=payload.etablissement.adresse,
         telephone=payload.etablissement.telephone or "",
         email=str(payload.etablissement.email),
+        pays=payload.etablissement.pays,
         devise=payload.etablissement.devise,
         licence_cle=payload.etablissement.license_key,
         licence_statut="pending_validation" if payload.etablissement.license_key else "active",

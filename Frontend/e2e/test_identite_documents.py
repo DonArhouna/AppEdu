@@ -11,7 +11,7 @@ l'etablissement qui y figurera emet a l'aveugle.
 
 from playwright.sync_api import expect
 
-from conftest import DELAI_RENDU, journal_erreurs
+from conftest import DELAI_RENDU, PAYS_ETABLISSEMENT, journal_erreurs
 
 
 def test_le_secretariat_voit_l_identite_sur_l_ecran_documents(
@@ -22,6 +22,11 @@ def test_le_secretariat_voit_l_identite_sur_l_ecran_documents(
 
     # La bande d'identite est presente et nomme l'etablissement.
     expect(page.get_by_text("Institut E2E Frontend").first).to_be_visible(timeout=DELAI_RENDU)
+
+    # Le pays y figure aussi. Il est imprime sur les documents : un
+    # secretariat qui ne le voit pas emet un document dont il n'a pas verifie
+    # la mention.
+    expect(page.get_by_text(PAYS_ETABLISSEMENT, exact=False).first).to_be_visible()
 
     # Aucun lien d'edition : le secretariat n'a pas la permission, un lien
     # qui mènerait a un ecran refuse serait une promesse rompue.

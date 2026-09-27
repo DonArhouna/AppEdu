@@ -273,11 +273,36 @@ async def _run() -> None:
         types = await client.get("/api/v1/documents/types", headers=admin)
         assert types.status_code == 200, types.text
         codes_types = {t["code"] for t in types.json()}
-        assert codes_types == {"certificat_scolarite", "releve_notes", "quitus_financier"}, codes_types
-        # La deliberation n'est pas persistee : ces types ne doivent pas exister.
-        assert "attestation_reussite" not in codes_types
+        # Quatre types depuis la migration 0017 : l'attestation de reussite
+        # est devenue possible **parce que** la deliberation est desormais
+        # enregistree.
+        assert codes_types == {
+            "certificat_scolarite",
+            "releve_notes",
+            "quitus_financier",
+            "attestation_reussite",
+        }, codes_types
+        # Le diplome, lui, reste absent : aucun diplome n'est enregistre, et
+        # en emettre reviendrait a inventer un droit academique.
         assert "attestation_diplome" not in codes_types
-        print("  [OK] Catalogue : 3 types, aucun type adosse a une donnee non persistee.")
+        print("  [OK] Catalogue : 4 types ; le diplome reste absent.")
+
+        # ------------------------------------------------------------------
+        # 2 bis. L'attestation de reussite est bloquee sans jury
+        # ------------------------------------------------------------------
+        # C'est le garde-fou central de l'increment : une moyenne favorable
+        # ne fonde aucun droit. Sans seance close portant « Admis », le
+        # document est refuse — meme pour un etudiant tres bien note.
+        sans_admis = await client.post(
+            f"/api/v1/documents/etudiants/{inscrit['id']}",
+            json={"type_document": "attestation_reussite", "session_id": session_id},
+            headers=admin,
+        )
+        assert sans_admis.status_code == 422, sans_admis.text
+        detail_sans_admis = sans_admis.json()["detail"]
+        assert "Admis" in detail_sans_admis, detail_sans_admis
+        assert "jury" in detail_sans_admis.lower(), detail_sans_admis
+        print("  [OK] Attestation de reussite refusee sans decision de jury close.")
 
         # ------------------------------------------------------------------
         # 3. Eligibilite : les conditions bloquent la generation

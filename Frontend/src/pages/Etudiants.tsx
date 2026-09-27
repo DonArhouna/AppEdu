@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import BoutonExport from "@/components/etudiants/BoutonExport";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -46,15 +47,22 @@ import {
   AlertCircle
 } from "lucide-react";
 import { StudentDialog, Student } from "@/components/students/StudentDialog";
-import type { AcademicSession, Filiere, Student as StudentApi } from "@/services/apiTypes";
+import type {
+  AcademicClass,
+  AcademicSession,
+  Filiere,
+  Student as StudentApi,
+} from "@/services/apiTypes";
 import { toast } from "sonner";
-import { etudiantsApi, sessionsApi, structureApi } from "@/services/apiClient";
+import { academicApi, etudiantsApi, sessionsApi, structureApi } from "@/services/apiClient";
 
 const Etudiants = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterFiliere, setFilterFiliere] = useState("all");
   const [filterNiveau, setFilterNiveau] = useState("all");
+  const [filterClasse, setFilterClasse] = useState("all");
+  const [classesList, setClassesList] = useState<AcademicClass[]>([]);
   const [filterCycle, setFilterCycle] = useState("all");
   const [filterSession, setFilterSession] = useState("all");
 
@@ -73,10 +81,11 @@ const Etudiants = () => {
     setLoading(true);
     setError(null);
     try {
-      const [etudiantsRes, sessionsRes, filieresRes] = await Promise.all([
+      const [etudiantsRes, sessionsRes, filieresRes, classesRes] = await Promise.all([
         etudiantsApi.getAll(),
         sessionsApi.getAll(),
         structureApi.getFilieres(),
+      academicApi.getClasses(),
       ]);
 
       if (etudiantsRes.error) {
@@ -115,6 +124,9 @@ const Etudiants = () => {
       if (filieresRes.data) {
         setFilieresList(filieresRes.data);
       }
+      if (classesRes.data) {
+        setClassesList(classesRes.data);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Erreur de connexion au serveur backend.");
     } finally {
@@ -132,13 +144,22 @@ const Etudiants = () => {
       student.prenom.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.matricule.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFiliere = filterFiliere === "all" || student.filiere === filterFiliere;
+    const matchesClasse =
+      filterClasse === "all" || student.classeId === filterClasse;
     const matchesNiveau = filterNiveau === "all" || student.niveau === filterNiveau;
     const matchesCycle = filterCycle === "all" || student.cycle === filterCycle;
     const matchesSession =
       filterSession === "all" ||
       (filterSession === "none" ? !student.sessionId : student.sessionId === filterSession);
 
-    return matchesSearch && matchesFiliere && matchesNiveau && matchesCycle && matchesSession;
+    return (
+      matchesSearch &&
+      matchesFiliere &&
+      matchesClasse &&
+      matchesNiveau &&
+      matchesCycle &&
+      matchesSession
+    );
   });
 
   const availableCycles = Array.from(new Set(students.map((student) => student.cycle).filter(Boolean)));
@@ -237,6 +258,15 @@ const Etudiants = () => {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
             Actualiser
           </Button>
+          <BoutonExport
+            classeId={filterClasse === "all" ? undefined : filterClasse}
+            classeNom={
+              filterClasse === "all"
+                ? null
+                : (classesList.find((classe) => classe.id === filterClasse)
+                    ?.nom ?? null)
+            }
+          />
           <Button onClick={handleAddNew} className="bg-primary text-primary-foreground">
             <Plus className="h-4 w-4 mr-2" />
             Nouvel Étudiant
@@ -330,6 +360,19 @@ const Etudiants = () => {
                   {filieresList.map((f) => (
                     <SelectItem key={f.id} value={f.nom}>
                       {f.nom}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterClasse} onValueChange={setFilterClasse}>
+                <SelectTrigger className="flex-1" id="filtre-classe">
+                  <SelectValue placeholder="Classe" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes les classes</SelectItem>
+                  {classesList.map((classe) => (
+                    <SelectItem key={classe.id} value={classe.id}>
+                      {classe.nom}
                     </SelectItem>
                   ))}
                 </SelectContent>

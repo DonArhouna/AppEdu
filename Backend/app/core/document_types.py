@@ -6,11 +6,14 @@ Regle absolue : **un document officiel n'est delivrable que si les donnees
 qu'il atteste sont reellement persistes.**  Aucun type n'est propose si son
 contenu ne peut pas etre prouve par la base.
 
-C'est pourquoi ``attestation_reussite`` et ``attestation_diplome`` sont
-absents : les decisions de deliberation sont calculees a la volee et ne sont
-jamais enregistrees.  Les emettre reviendrait a inventer un droit academique.
-Ils deviendront disponibles le jour ou la deliberation sera **persistee** (decision,
-date, jury, mention), pas avant.
+``attestation_diplome`` reste absent : aucun diplome n'est enregistre dans
+l'application, et en emettre reviendrait a inventer un droit.
+
+``attestation_reussite`` est devenue disponible avec la migration 0017, qui
+persiste enfin la deliberation — decision, date, jury, mention.  Elle n'est
+toujours pas inconditionnelle : la generation exige une seance de jury
+**close** portant une decision ``Admis`` pour l'etudiant.  Une seance restee
+en brouillon ne fonde aucun droit, meme si la moyenne le permettrait.
 
 Chaque type declare ses conditions de validite.  Une condition non satisfaite
 bloque la generation avec un message explicite : l'appelant ne peut pas
@@ -26,6 +29,7 @@ from typing import Mapping, Tuple
 CODE_CERTIFICAT = "certificat_scolarite"
 CODE_RELEVE = "releve_notes"
 CODE_QUITUS = "quitus_financier"
+CODE_ATTESTATION_REUSSITE = "attestation_reussite"
 
 PERMISSION_DOCUMENTS = "documents.issue"
 
@@ -82,6 +86,23 @@ DOCUMENT_TYPES: Tuple[DocumentTypeDefinition, ...] = (
         ),
         champs_obligatoires=("etudiant.matricule", "etudiant.nom", "etudiant.prenom", "factures"),
     ),
+    DocumentTypeDefinition(
+        code=CODE_ATTESTATION_REUSSITE,
+        prefixe="ATT",
+        libelle="Attestation de reussite",
+        description=(
+            "Atteste la decision du jury de la session. La deliberation doit "
+            "etre close et porter un statut Admis pour cet etudiant."
+        ),
+        champs_obligatoires=(
+            "etudiant.matricule",
+            "etudiant.nom",
+            "etudiant.prenom",
+            "deliberation.date",
+            "deliberation.jury",
+            "deliberation.decision",
+        ),
+    ),
 )
 
 DOCUMENT_TYPES_BY_CODE: Mapping[str, DocumentTypeDefinition] = MappingProxyType(
@@ -98,6 +119,7 @@ def get_document_type(code: str) -> DocumentTypeDefinition | None:
 
 
 __all__ = [
+    "CODE_ATTESTATION_REUSSITE",
     "CODE_CERTIFICAT",
     "CODE_QUITUS",
     "CODE_RELEVE",

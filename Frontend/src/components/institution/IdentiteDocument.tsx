@@ -55,7 +55,15 @@ const IdentiteDocument = () => {
     );
   }
 
-  const coordonnees = [config.adresse, config.telephone, config.email].filter(Boolean);
+  // Le pays fait partie de l'identite imprimee sur les documents : il doit
+  // etre visible ici, sinon le secretariat emet un document dont il n'a pas
+  // verifie la mention.
+  const coordonnees = [
+    config.adresse,
+    config.telephone,
+    config.email,
+    config.pays,
+  ].filter(Boolean);
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">

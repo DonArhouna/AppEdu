@@ -77,6 +77,16 @@ class Note(Base, TimestampMixin):
     )
     valeur: Mapped[float] = mapped_column(Float, nullable=False)  # Note sur 20
     coefficient: Mapped[float] = mapped_column(Float, nullable=False)
+    #: Semestre auquel la note se rattache.
+    #:
+    #: Nullable, et **jamais deduit** : la note d'une UE semestrielle herite
+    #: du semestre de son UE, mais une UE annuelle est notee sur chaque
+    #: semestre et la seule donnee qui distingue les deux notes est celle-ci.
+    #: La deduire de la date d'examen serait fiable chez un institut qui saisit
+    #: ses dates, et silencieusement fausse chez celui qui ne le fait pas.
+    semestre_id: Mapped[Optional[str]] = mapped_column(
+        String(50), ForeignKey("semestres.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     appreciation: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     statut: Mapped[str] = mapped_column(String(30), nullable=False, default="Validé")  # Validé, Rattrapage
     saisi_par_id: Mapped[Optional[int]] = mapped_column(

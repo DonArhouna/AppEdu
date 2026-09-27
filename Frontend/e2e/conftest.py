@@ -44,6 +44,9 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 #: Identifiants de l'instance de test, crees par le Setup Wizard.
+#: Pays de l'etablissement de test. Doit etre visible sur l'ecran
+#: Documents : c'est l'endroit ou le secretariat verifie ce qu'il imprime.
+PAYS_ETABLISSEMENT = "Côte d'Ivoire"
 ADMIN_EMAIL = "admin.e2e@ecole-ci.org"
 ADMIN_PASSWORD = "E2E-Admin-2026!"
 SECRETARY_EMAIL = "secretariat.e2e@ecole-ci.org"
@@ -408,6 +411,9 @@ def _semer(env: Environnement) -> None:
             "adresse": "Rue des tests",
             "telephone": "+2250000000000",
             "email": "contact@e2e.example.org",
+            # Saisi au setup : sans lui, l'identite de test serait incomplete
+            # et ne prouverait rien du defaut corrige.
+            "pays": PAYS_ETABLISSEMENT,
             "devise": "XOF",
         },
         "admin": {
@@ -545,9 +551,11 @@ class Administration:
         self.headers = {"Authorization": f"Bearer {token}"}
 
     def _api_ok(self, methode: str, chemin: str, **kwargs) -> requests.Response:
+        # Les en-tetes du client peuvent etre enrichis par l'appelant : on
+        # fusionne plutot que de laisser deux ``headers`` se percuter.
+        entetes = {**self.headers, **(kwargs.pop("headers", None) or {})}
         reponse = requests.request(
-            methode, f"{self.base}{chemin}", timeout=30,
-            headers=self.headers, **kwargs,
+            methode, f"{self.base}{chemin}", timeout=30, headers=entetes, **kwargs,
         )
         if reponse.status_code >= 400:
             raise RuntimeError(

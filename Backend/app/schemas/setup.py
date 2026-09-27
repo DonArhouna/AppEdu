@@ -15,6 +15,14 @@ class EtablissementSetupInput(BaseModel):
     email: EmailStr
     site_web: Optional[str] = None
     devise: str = Field(..., min_length=3, max_length=10)
+    # Le pays fait partie de l'identite institutionnelle portee sur les
+    # documents officiels. L'ignorer ici ne le rendait pas facultatif : cela
+    # livrait a chaque installation neuve un etablissement sans pays, donc des
+    # attestations incompletes. Remplissable apres coup depuis
+    # /parametrage, mais la premiere emission meritait d'etre complete.
+    # La longueur suit la colonne : une limite arbitrairement plus courte
+    # rejetterait un nom légitime sans motif.
+    pays: Optional[str] = Field(None, max_length=100)
     license_key: Optional[str] = None
 
 

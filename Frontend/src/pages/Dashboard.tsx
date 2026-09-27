@@ -3,8 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, UserCheck, CreditCard, GraduationCap, RefreshCw, AlertCircle, ArrowRight } from "lucide-react";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { Button } from "@/components/ui/button";
-import { etudiantsApi, structureApi, financesApi, sessionsApi, setupApi } from "@/services/apiClient";
-import type { Payment, Student } from "@/services/apiTypes";
+import {
+  deliberationApi,
+  etudiantsApi,
+  financesApi,
+  sessionsApi,
+  setupApi,
+  structureApi,
+} from "@/services/apiClient";
+import type { Payment, ReglesDeliberation, Student } from "@/services/apiTypes";
 import { Link } from "react-router-dom";
 
 interface DashboardData {
@@ -27,22 +34,48 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currency, setCurrency] = useState("");
+  // Etat reel du reglement de deliberation : la carte du tableau de bord
+  // doit le refléter, pas afficher un « Operationnel » decoratif.
+  const [regles, setRegles] = useState<ReglesDeliberation | null>(null);
 
   const loadDashboard = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const [etudiantsRes, filieresRes, paiementsRes, sessionRes, statusResult] = await Promise.all([
-        etudiantsApi.getAll(),
-        structureApi.getFilieres(),
-        financesApi.getPaiements(),
-        sessionsApi.getActive(),
-        setupApi.getStatus(),
-      ]);
+      const [etudiantsRes, filieresRes, paiementsRes, sessionRes, statusResult, reglesRes] =
+        await Promise.all([
+          etudiantsApi.getAll(),
+          structureApi.getFilieres(),
+          financesApi.getPaiements(),
+          sessionsApi.getActive(),
+          setupApi.getStatus(),
+          // La lecture des regles est facultative : son echec ne doit pas
+          // priver l'administrateur du reste du tableau de bord.
+          deliberationApi.getRegles(),
+        ]);
 
-      if (etudiantsRes.error || filieresRes.error || paiementsRes.error || sessionRes.error || statusResult.error) {
-        const firstErr = etudiantsRes.error || filieresRes.error || paiementsRes.error || sessionRes.error || statusResult.error;
+      // Une session absente n'est pas une panne. L'institut peut n'avoir
+      // aucune annee active — c'est l'etat d'une instance configuree depuis
+      // le Setup Wizard. Le 404 signifie « pas encore configuree », et le
+      // repli « Non.define » plus bas en temoigne : sans cette distinction, le
+      // tableau de bord entier s'affichait en erreur alors que tout le reste
+      // etait charge.
+      const sessionNonConfiguree = sessionRes.status === 404;
+
+      if (
+        etudiantsRes.error ||
+        filieresRes.error ||
+        paiementsRes.error ||
+        statusResult.error ||
+        (sessionRes.error && !sessionNonConfiguree)
+      ) {
+        const firstErr =
+          etudiantsRes.error ||
+          filieresRes.error ||
+          paiementsRes.error ||
+          statusResult.error ||
+          (sessionNonConfiguree ? null : sessionRes.error);
         setError(firstErr || "Impossible de charger les données du tableau de bord.");
         setLoading(false);
         return;
@@ -53,6 +86,7 @@ const Dashboard = () => {
       const paiements = paiementsRes.data || [];
       const activeSession = sessionRes.data;
       setCurrency(statusResult.data?.devise || "");
+      setRegles(reglesRes.data ?? null);
 
       const totalEncaisse = paiements.reduce((acc: number, p: Payment) => acc + (Number(p.montant) || 0), 0);
       const actifs = students.filter((s: Student) => s.statut === "actif" || s.statut === "valide").length;
@@ -218,12 +252,30 @@ const Dashboard = () => {
 
             <div className="p-3 rounded-xl border border-border/50 bg-muted/30 text-xs flex items-center justify-between">
               <div>
-                <p className="font-semibold text-foreground">Moteur de Délibération LMD/ECTS</p>
-                <p className="text-muted-foreground">Compensation, seuils d'ajournement et mentions</p>
+                <p className="font-semibold text-foreground">
+                  <Link
+                    to="/deliberation"
+                    className="inline-flex items-center gap-1 hover:underline"
+                  >
+                    Moteur de Délibération LMD/ECTS
+                    <ArrowRight className="h-3 w-3" />
+                  </Link>
+                </p>
+                <p className="text-muted-foreground">
+                  {regles?.confirmee
+                    ? `Validation ${regles.seuil_validation_moyenne}/20, éliminatoire ${regles.seuil_eliminatoire}/20, règlement confirmé`
+                    : "Seuils par défaut, jamais confirmés par l'établissement"}
+                </p>
               </div>
-              <span className="text-xs font-bold px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                Opérationnel
-              </span>
+              {regles?.confirmee ? (
+                <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                  Règlement confirmé
+                </span>
+              ) : (
+                <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                  À confirmer
+                </span>
+              )}
             </div>
 
             <div className="p-3 rounded-xl border border-border/50 bg-muted/30 text-xs flex items-center justify-between">
