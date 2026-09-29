@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import func, select
@@ -80,25 +81,29 @@ async def creances_etudiant(
 
     creances: List[Dict[str, Any]] = []
     for facture in (await db.execute(stmt)).scalars().all():
-        reste = float(facture.reste_a_payer)
+        reste = facture.reste_a_payer
         if reste <= 0:
             # Facture sollee mais statut non mis a jour : la creance est
             # eteinte. Ne pas la relancer serait une erreur d'encaissement.
             continue
         retard = (today - facture.date_echeance).days
+        centime = Decimal("0.01")
         creances.append(
             {
                 "facture_id": facture.id,
                 "numero": facture.numero_facture,
                 "session_id": facture.session_id,
                 # Serialisee : ces dictes sont stockes tels quels dans la
-                # colonne JSON ``relances.factures_concernees``, et un objet
-                # ``date`` n'y est pas representable.
+                # colonne JSON ``relances.factures_concernees``, ou ``date``
+                # et ``Decimal`` ne sont pas representables.  Le flottant
+                # d'affichage a deux decimales suffit : l'exactitude vitre
+                # dans les colonnes de la facture, l'instantane ne fait que
+                # la montrer.
                 "date_echeance": facture.date_echeance.isoformat(),
                 "description": facture.description,
-                "montant_total": round(float(facture.montant_total), 2),
-                "montant_regle": round(float(facture.montant_paye), 2),
-                "reste": round(reste, 2),
+                "montant_total": float(facture.montant_total.quantize(centime)),
+                "montant_regle": float(facture.montant_paye.quantize(centime)),
+                "reste": float(reste.quantize(centime)),
                 "retard_jours": retard,
             }
         )
@@ -137,7 +142,7 @@ async def a_relancer(
         if not echues:
             continue
 
-        total = round(sum(c["reste"] for c in echues), 2)
+        total = sum((Decimal(c["reste"]) for c in echues), Decimal("0.00")).quantize(Decimal("0.01"))
         plus_ancienne = min(c["retard_jours"] for c in echues)
         niveau = await _niveau_relance(db, etudiant.id, session_id)
 
@@ -273,7 +278,7 @@ async def enregistrer_relance(
         )
 
     niveau = await _niveau_relance(db, etudiant_id, session_id)
-    total = round(sum(c["reste"] for c in creances), 2)
+    total = sum((Decimal(c["reste"]) for c in creances), Decimal("0.00")).quantize(Decimal("0.01"))
     plus_ancienne = min(c["retard_jours"] for c in creances)
 
     relance = Relance(
@@ -295,7 +300,9 @@ async def enregistrer_relance(
 
     resume = {
         "niveau": niveau,
-        "montant_reclame": total,
+        # Dict brut serialise par pydantic en JSON : un Decimal y partirait
+        # en chaine.  Le flottant d'affichage a deux decimales suffit.
+        "montant_reclame": float(total),
         "retard_jours": plus_ancienne,
         "nb_creances": len(creances),
     }
@@ -320,7 +327,7 @@ async def solder_suivi(
     from app.models.relance import Relance
 
     creances = await creances_etudiant(db, etudiant_id, None)
-    solde = round(sum(c["reste"] for c in creances), 2)
+    solde = sum((Decimal(c["reste"]) for c in creances), Decimal("0.00")).quantize(Decimal("0.01"))
 
     stmt = select(Relance).where(
         Relance.etudiant_id == etudiant_id, Relance.niveau == niveau

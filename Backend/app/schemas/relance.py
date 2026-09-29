@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.montant import Montant
+
 
 class CreanceEtudiant(BaseModel):
     """Une facture echue non soldee, telle qu'elle est au moment de la lecture."""
@@ -13,9 +15,9 @@ class CreanceEtudiant(BaseModel):
     numero: str
     date_echeance: date
     description: Optional[str] = None
-    montant_total: float
-    montant_regle: float
-    reste: float
+    montant_total: Montant
+    montant_regle: Montant
+    reste: Montant
     retard_jours: int
 
 
@@ -27,7 +29,7 @@ class RelanceAnterieure(BaseModel):
     niveau: int
     date_relance: date
     moyen: str
-    montant_reclame: float
+    montant_reclame: Montant
 
 
 class ARelancer(BaseModel):
@@ -42,7 +44,7 @@ class ARelancer(BaseModel):
     email: Optional[str] = None
     creances: List[CreanceEtudiant] = Field(default_factory=list)
     nb_creances: int
-    total_du: float
+    total_du: Montant
     #: Retard de la plus ancienne echeance.
     retard_jours: int
     anciennete_jours: int
@@ -60,11 +62,11 @@ class SyntheseRelances(BaseModel):
     devise: str = ""
     nb_etudiants: int
     nb_creances: int
-    total_du: float
+    total_du: Montant
     # Paliers repris de la balance agee, pour que les deux vues concordent.
-    retard_1_30: float
-    retard_31_60: float
-    retard_plus_60: float
+    retard_1_30: Montant
+    retard_31_60: Montant
+    retard_plus_60: Montant
     items: List[ARelancer] = Field(default_factory=list)
 
 
@@ -103,14 +105,18 @@ class RelanceOut(BaseModel):
     niveau: int
     date_relance: date
     moyen: str
-    montant_reclame: float
+    montant_reclame: Montant
     retard_jours: int
     message: Optional[str] = None
-    solde_apres: Optional[float] = None
+    solde_apres: Optional[Montant] = None
     relance_par_email: Optional[str] = None
     created_at: Optional[datetime] = None
     nb_factures: int = 0
     factures_concernees: List[Dict[str, Any]] = Field(default_factory=list)
+    #: Trace du dernier envoi de la lettre par email (lot 4) : ``envoye``,
+    #: ``simule`` (SMTP non configure) ou ``echec`` ; ``None`` = jamais envoye.
+    email_statut: Optional[str] = None
+    email_envoye_le: Optional[datetime] = None
     #: Un encaissement a-t-il suivi la relance ?
     resolue: bool = False
 
@@ -128,7 +134,7 @@ class SoldeSuivi(BaseModel):
 
     etudiant_id: str
     niveau: int
-    solde_apres: float
+    solde_apres: Montant
     nb_relances_concernees: int
 
 

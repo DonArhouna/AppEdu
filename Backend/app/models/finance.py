@@ -6,10 +6,14 @@ Modèles Finances :
 """
 
 from datetime import date
+from decimal import Decimal
 from typing import List, Optional
-from sqlalchemy import String, Float, Date, ForeignKey, Text, JSON, UniqueConstraint
+from sqlalchemy import Numeric, String, Date, ForeignKey, Text, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
+
+#: Deux decimales, la precision d'une monnaie ; 14 chiffres au total.
+MONEY = Numeric(14, 2)
 
 
 class GrilleTarifaire(Base, TimestampMixin):
@@ -31,14 +35,14 @@ class GrilleTarifaire(Base, TimestampMixin):
     )
     filiere: Mapped[str] = mapped_column(String(255), nullable=False)
     niveau: Mapped[str] = mapped_column(String(100), nullable=False)
-    droits_inscription: Mapped[float] = mapped_column(Float, nullable=False)
-    scolarite_mensuelle: Mapped[float] = mapped_column(Float, nullable=False)
+    droits_inscription: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
+    scolarite_mensuelle: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
     nombre_mois: Mapped[int] = mapped_column(nullable=False)
     actif: Mapped[bool] = mapped_column(nullable=False, default=True)
 
     @property
-    def total_annuel(self) -> float:
-        return round(self.droits_inscription + (self.scolarite_mensuelle * self.nombre_mois), 2)
+    def total_annuel(self) -> Decimal:
+        return (self.droits_inscription + self.scolarite_mensuelle * self.nombre_mois).quantize(Decimal("0.01"))
 
     def __repr__(self) -> str:
         return f"<GrilleTarifaire {self.filiere!r} / {self.niveau!r}>"
@@ -55,8 +59,8 @@ class Facture(Base, TimestampMixin):
     session_id: Mapped[str] = mapped_column(
         String(50), ForeignKey("sessions_academiques.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    montant_total: Mapped[float] = mapped_column(Float, nullable=False)
-    montant_paye: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    montant_total: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
+    montant_paye: Mapped[Decimal] = mapped_column(MONEY, nullable=False, default=Decimal("0.00"))
     date_emission: Mapped[date] = mapped_column(Date, nullable=False)
     date_echeance: Mapped[date] = mapped_column(Date, nullable=False)
     statut: Mapped[str] = mapped_column(String(30), nullable=False, default="emise")  # emise, partielle, payee, echue
@@ -67,8 +71,8 @@ class Facture(Base, TimestampMixin):
     paiements: Mapped[List["Paiement"]] = relationship("Paiement", back_populates="facture")
 
     @property
-    def reste_a_payer(self) -> float:
-        return max(0.0, round(self.montant_total - self.montant_paye, 2))
+    def reste_a_payer(self) -> Decimal:
+        return max(Decimal("0.00"), (self.montant_total - self.montant_paye).quantize(Decimal("0.01")))
 
     def __repr__(self) -> str:
         return f"<Facture '{self.numero_facture}' total={self.montant_total} statut='{self.statut}'>"
@@ -90,7 +94,7 @@ class Paiement(Base, TimestampMixin):
     periode_id: Mapped[Optional[str]] = mapped_column(
         String(50), ForeignKey("periodes_paiement.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    montant: Mapped[float] = mapped_column(Float, nullable=False)
+    montant: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
     date_paiement: Mapped[date] = mapped_column(Date, nullable=False)
     mode_paiement: Mapped[str] = mapped_column(String(50), nullable=False, default="Espèces")  # Espèces, Wave, Orange Money, Chèque, Virement
     reference: Mapped[str] = mapped_column(String(100), nullable=False)

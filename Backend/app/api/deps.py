@@ -27,7 +27,7 @@ from collections import OrderedDict
 from types import MappingProxyType
 from typing import AsyncGenerator, List, Mapping, Optional, Sequence
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -36,6 +36,7 @@ from app.core.config import settings
 from app.core.database import async_session_factory
 from app.core.security import decode_access_token
 from app.models.utilisateur import Utilisateur, UserRole
+from app.services import auth_service
 from app.services.rbac_service import effective_permissions
 
 
@@ -45,9 +46,68 @@ oauth2_scheme = OAuth2PasswordBearer(
 )
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Fournit une session SQLAlchemy asynchrone avec commit/rollback automatique."""
-    async with async_session_factory() as session:
+# ---------------------------------------------------------------------------
+# Multi-tenant (lot 6) : la requête sait à quelle école elle s'adresse
+# ---------------------------------------------------------------------------
+
+async def resoudre_tenant(request) -> str:
+    """Le slug de l'école que cette requête vise, ou ``default``.
+
+    Deux sources, dans l'ordre : l'en-tête ``X-Tenant-ID`` (le jour du
+    déploiement SaaS, le middleware sous-domaine écrira la même clé) ; puis
+    l'attribut de requête posé par un middleware. En ``standalone``, tout
+    vaut ``default`` — une installation cliente ignore le mécanisme.
+
+    Aucune lecture de base ici : le résolveur ne doit pas dépendre de la
+    base qu'il est en train de choisir.
+    """
+    if settings.TENANT_MODE != "multi_tenant":
+        return "default"
+    slug = request.headers.get(settings.TENANT_HEADER)
+    if slug:
+        from app.services.tenant_service import slug_valide
+
+        return slug if slug_valide(slug) else "inconnu"
+    return getattr(request.state, "tenant_id", "default")
+
+
+async def get_db(
+    requete: Request = None,
+) -> AsyncGenerator[AsyncSession, None]:
+    """Fournit la session du tenant courant, avec commit/rollback automatique.
+
+    FastAPI injecte la ``Request`` de la requête entrante. En
+    ``standalone`` (le cas de toutes les installations actuelles),
+    ``default`` pointe exactement comme avant sur ``DATABASE_URL`` : ce
+    branchement ne change rien pour personne. En ``multi_tenant``, la
+    session s'ouvre sur la base de l'école désignée par la requête ; une
+    école inconnue ou suspendue reçoit 403 avant toute lecture métier.
+    """
+    from app.core.database import get_sessionmaker_for_tenant
+
+    tenant_id = "default"
+    if settings.TENANT_MODE == "multi_tenant" and requete is not None:
+        from app.services.tenant_service import resoudre
+
+        slug = await resoudre_tenant(requete)
+        # ``default`` EST la base de contrôle : l'exploitation locale, les
+        # tests, et (en SaaS) les routes d'administration du registre.
+        # Elle ne passe pas par le registre — elle le porte.
+        if slug != "default":
+            # La résolution complète (registre, statut) se fait sur la base
+            # de contrôle : c'est elle qui sait si l'école existe et est en
+            # service.
+            async with async_session_factory() as controle:
+                tenant = await resoudre(controle, slug)
+            if tenant is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Établissement inconnu ou accès suspendu.",
+                )
+            tenant_id = slug
+
+    fabrique = get_sessionmaker_for_tenant(tenant_id)
+    async with fabrique() as session:
         try:
             yield session
             await session.commit()
@@ -62,7 +122,15 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
     token: str = Depends(oauth2_scheme)
 ) -> Utilisateur:
-    """Valide le jeton JWT et retourne l'utilisateur courant."""
+    """Valide le jeton JWT et retourne l'utilisateur courant.
+
+    Depuis le lot 2, un jeton porte un claim ``sid`` identifiant la session
+    qui l'a emis. Ce claim est **verifie** a chaque requete : une session
+    revoquee (logout, rotation, fuite detectee, changement de mot de passe)
+    ferme l'acces immediatement, avant l'expiration du jeton. Les jetons
+    emis sans ``sid`` gardent leur duree historique : c'est la fenetre de
+    compatibilite, elle se referme d'elle-meme en une heure.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Identifiants d'authentification invalides ou session expirée.",
@@ -77,6 +145,13 @@ async def get_current_user(
 
     user_id: str = payload.get("sub")
     if not user_id:
+        raise credentials_exception
+
+    session_id = payload.get("sid")
+    if session_id and not await auth_service.session_vivante(db, session_id):
+        # La session qui a emis ce jeton a ete fermee : le jeton, encore
+        # signe et encore non-expire, ne vaut plus rien. C'est ce refus qui
+        # rend la revocation immediate plutot qu'a l'heure.
         raise credentials_exception
 
     stmt = select(Utilisateur).where(Utilisateur.id == int(user_id))

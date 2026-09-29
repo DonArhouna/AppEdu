@@ -50,11 +50,44 @@ jobs:
       - name: Run domain tests
         run: python test_sprint2.py
 
-      - name: Run PostgreSQL migration and E2E test
+      # Chaque suite E2E migre son propre schema via Alembic puis teste son
+      # module : les faire toutes tourner sur le service PostgreSQL est le
+      # seul moyen de detecter une regression de migration avant le deploi.
+      # Les suites qui en ont besoin lisent TEST_DATABASE_URL ; les autres
+      # restent sur leur SQLite isole, selon leur conception.
+      - name: Run E2E suites (PostgreSQL)
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/edumanagepro_test
           TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/edumanagepro_test
-        run: python test_sprint3_e2e.py
+        run: |
+          suites=(
+            test_sprint3_e2e.py
+            test_academic_e2e.py
+            test_auth_lot2_e2e.py
+            test_bulletins_lot_e2e.py
+            test_deliberation_e2e.py
+            test_documents_e2e.py
+            test_etudiant_import_e2e.py
+            test_export_e2e.py
+            test_import_notes_e2e.py
+            test_institution_e2e.py
+            test_matricule_e2e.py
+            test_paiements_en_ligne_e2e.py
+            test_rbac_e2e.py
+            test_relances_e2e.py
+            test_salles_conflits_e2e.py
+            test_semestre_e2e.py
+          )
+          echec=0
+          for suite in "${suites[@]}"; do
+            echo "::group::$suite"
+            if ! python "$suite"; then
+              echo "::error file=Backend/$suite::Suite E2E en echec"
+              echec=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $echec
 
   frontend:
     name: Frontend

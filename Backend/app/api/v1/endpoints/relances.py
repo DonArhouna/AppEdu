@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -69,7 +70,7 @@ def _relance_out(relance: Relance) -> RelanceOut:
         niveau=relance.niveau,
         date_relance=relance.date_relance,
         moyen=relance.moyen,
-        montant_reclame=round(float(relance.montant_reclame), 2),
+        montant_reclame=relance.montant_reclame,
         retard_jours=relance.retard_jours,
         message=relance.message,
         solde_apres=relance.solde_apres,
@@ -77,6 +78,8 @@ def _relance_out(relance: Relance) -> RelanceOut:
         created_at=relance.created_at,
         nb_factures=len(factures),
         factures_concernees=factures,
+        email_statut=relance.email_statut,
+        email_envoye_le=relance.email_envoye_le,
         resolue=relance.resolue,
     )
 
@@ -216,7 +219,9 @@ async def constater_relance(
         details={
             "etudiant_id": payload.etudiant_id,
             "niveau": relance.niveau,
-            "montant": relance.montant_reclame,
+            # Le journal d'audit est une colonne JSON : un Decimal n'y est pas
+            # representable, le montant part en flottant d'affichage.
+            "montant": float(relance.montant_reclame),
             "moyen": relance.moyen,
             "retard_jours": relance.retard_jours,
         },
@@ -256,7 +261,7 @@ async def constater_solde(
                 "étudiant."
             ),
         )
-    solde = relances[0].solde_apres or 0.0
+    solde = relances[0].solde_apres if relances[0].solde_apres is not None else Decimal("0.00")
 
     await record_audit_event(
         db,
@@ -265,14 +270,15 @@ async def constater_solde(
         action="finance.relance.settled",
         resource_type="relance",
         resource_id=relances[0].id,
-        details={"etudiant_id": etudiant_id, "niveau": niveau, "solde_apres": solde},
+        # JSON n'a pas de decimal : l'audit flotte, la relance ne flotte pas.
+        details={"etudiant_id": etudiant_id, "niveau": niveau, "solde_apres": float(solde)},
     )
     await db.commit()
 
     return SoldeSuivi(
         etudiant_id=etudiant_id,
         niveau=niveau,
-        solde_apres=round(float(solde), 2),
+        solde_apres=solde,
         nb_relances_concernees=len(relances),
     )
 
@@ -332,6 +338,97 @@ async def lettre_de_relance(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{nom_fichier}"'},
     )
+
+
+@router.post(
+    "/relances/{relance_id}/envoyer-email",
+    response_model=RelanceOut,
+    summary="Envoyer la lettre de relance par email",
+)
+async def envoyer_lettre_email(
+    relance_id: str,
+    db: AsyncSession = Depends(get_db),
+    auteur: Utilisateur = Depends(require_finance_write),
+):
+    """Envoie la lettre de relance (PDF) à l'étudiant, par email.
+
+    Un acte **explicite** du secrétariat, jamais automatique : rien ne part
+    sans qu'on ait cliqué. Le résultat est consigné **sur la relance** :
+    ``envoye`` (parti), ``simule`` (SMTP non configuré — l'application le
+    dit, elle ne prétend pas avoir contacté l'étudiant) ou ``echec``
+    (serveur de courrier injoignable, à retenter).
+
+    Un étudiant sans adresse email est un refus nommé (422) : la relance a
+    un autre moyen, la lettre imprimable reste disponible.
+    """
+
+    relance = await db.get(Relance, relance_id)
+    if relance is None:
+        raise HTTPException(status_code=404, detail="Aucune relance à cet identifiant.")
+    etudiant = relance.etudiant
+    if etudiant is None or not (etudiant.email or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Cet étudiant n'a pas d'adresse email enregistrée. Complétez sa "
+                "fiche, ou remettez la lettre imprimable par un autre moyen."
+            ),
+        )
+
+    etablissement = (await db.execute(select(Etablissement).limit(1))).scalars().first()
+    contenu, nom_fichier = await rendre_lettre(
+        db, relance=relance, etablissement=etablissement
+    )
+
+    from app.services import email_service
+
+    devise = etablissement.devise if etablissement else ""
+    texte = (
+        f"Bonjour {etudiant.prenom or ''} {etudiant.nom or ''},\n\n"
+        "Veuillez trouver en pièce jointe la lettre de relance concernant "
+        "vos frais de scolarité.\n\n"
+        f"Montant réclamé : {relance.montant_reclame} {devise}.\n\n"
+        "Le service comptabilité."
+    )
+    resultat = await email_service.envoyer_email(
+        destinataire=etudiant.email.strip(),
+        sujet=f"Lettre de relance niveau {relance.niveau} — frais de scolarité",
+        corps_texte=texte,
+        pieces_jointes=[(nom_fichier, contenu, "application/pdf")],
+    )
+
+    from datetime import datetime, timezone
+
+    relance.email_envoye_le = datetime.now(timezone.utc)
+    relance.email_statut = resultat.statut
+    await record_audit_event(
+        db,
+        actor_id=auteur.id,
+        actor_email=auteur.email,
+        action="finance.relance.email",
+        resource_type="relance",
+        resource_id=relance.id,
+        outcome=resultat.statut if resultat.statut != "simule" else "success",
+        reason=resultat.detail,
+        details={
+            "destinataire": etudiant.email.strip(),
+            "statut": resultat.statut,
+            "pieces_jointes": resultat.pieces_jointes,
+        },
+    )
+    await db.commit()
+    await db.refresh(relance)
+
+    if not resultat.parti:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"L'envoi a échoué ({resultat.detail}). La relance est enregistrée, "
+                "la lettre reste imprimable : réessayez plus tard."
+            ),
+        )
+
+    return _relance_out(relance)
 
 
 __all__ = ["router"]

@@ -8,9 +8,9 @@ Endpoints Gestion des Étudiants :
 from typing import List, Optional
 from datetime import date
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import func, select, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -23,6 +23,8 @@ from app.api.deps import (
 )
 from app.models.academic import Classe, Inscription, Niveau
 from app.models.etudiant import Etudiant
+from app.models.finance import Facture, Paiement
+from app.models.relance import Relance
 from app.models.session_academique import SessionAcademique
 from app.models.structure import Filiere
 from app.services.academic_service import class_projections, get_classe, sync_active_inscription
@@ -126,6 +128,7 @@ def _build_student_query(
 
 @router.get("/", response_model=List[EtudiantResponse], summary="Rechercher des étudiants")
 async def list_etudiants(
+    response: Response,
     search: Optional[str] = Query(None, description="Nom, prénom, email ou matricule"),
     filiere: Optional[str] = None,
     filiere_id: Optional[str] = None,
@@ -133,6 +136,11 @@ async def list_etudiants(
     statut: Optional[str] = None,
     niveau: Optional[str] = None,
     classe_id: Optional[str] = None,
+    #: Pagination additive : absents, la réponse reste complète (contrat
+    #: historique préservé) ; présents, la liste est bornée et le total
+    #: global arrive dans l'en-tête ``X-Total-Count``.
+    limit: Optional[int] = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     _auth=Depends(require_students_read),
 ):
@@ -147,6 +155,12 @@ async def list_etudiants(
         classe_id=classe_id,
     )
     stmt = stmt.order_by(Etudiant.nom.asc(), Etudiant.prenom.asc())
+    if limit is not None or offset:
+        total = (
+            await db.execute(select(func.count()).select_from(stmt.subquery()))
+        ).scalar()
+        response.headers["X-Total-Count"] = str(total or 0)
+        stmt = stmt.offset(offset).limit(limit or 500)
     res = await db.execute(stmt)
     return res.scalars().all()
 
@@ -408,6 +422,52 @@ async def delete_etudiant(
             status_code=status.HTTP_409_CONFLICT,
             detail="L'étudiant possède une inscription historique et ne peut pas être supprimé.",
         )
+    # Une piece comptable se conserve : la facture, le paiement et la relance
+    # survivent a l'etudiant, ou l'etudiant n'est pas supprime.  La base
+    # refuserait de toute facon (FK RESTRICT depuis la migration 0023), mais
+    # un 409 explicite avec sa raison vaut mieux qu'une erreur SQL.
+    ecritures = await db.execute(
+        select(Facture.id).where(Facture.etudiant_id == etudiant_id).limit(1)
+    )
+    if ecritures.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "L'étudiant possède des factures : les pièces comptables ne "
+                "peuvent pas être supprimées. Utilisez plutôt un changement "
+                "de statut (radiation) qui conserve l'historique."
+            ),
+        )
+    encaissements = await db.execute(
+        select(Paiement.id).where(Paiement.etudiant_id == etudiant_id).limit(1)
+    )
+    if encaissements.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "L'étudiant possède des paiements encaissés : les reçus émis "
+                "doivent rester consultables. Utilisez plutôt un changement "
+                "de statut (radiation)."
+            ),
+        )
+    relances = await db.execute(
+        select(Relance.id).where(Relance.etudiant_id == etudiant_id).limit(1)
+    )
+    if relances.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "L'étudiant possède un historique de relances : le suivi de "
+                "recouvrement doit rester lisible. Utilisez plutôt un "
+                "changement de statut (radiation)."
+            ),
+        )
+    # Un dossier qui arrive ici n'a NI inscription NI écriture comptable
+    # (gardes ci-dessus) : c'est une fiche orpheline.  On détache ses liens
+    # annulables (session, classe) pour que la suppression passe sur
+    # PostgreSQL aussi, où ces FK sont RESTRICT depuis la migration 0023.
+    etudiant.session_id = None
+    etudiant.classe_id = None
     try:
         await db.delete(etudiant)
         await db.commit()

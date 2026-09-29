@@ -43,6 +43,7 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy import select
@@ -299,7 +300,15 @@ async def _notes_existantes(
         etudiant = note.etudiant
         if etudiant is None or not etudiant.matricule:
             continue
-        index[(etudiant.matricule, note.examen_id or "")] = note
+        cle = (etudiant.matricule, note.examen_id or "")
+        if cle in index:
+            # Un doublon historique ne doit pas faire choisir une ligne au
+            # hasard : la derniere ecriture l'emporte, comme le ferait la
+            # relecture du registre.
+            if (note.created_at or datetime.min) >= (index[cle].created_at or datetime.min):
+                index[cle] = note
+            continue
+        index[cle] = note
     return index
 
 

@@ -8,7 +8,7 @@ import {
   DollarSign, CreditCard, TrendingUp, BarChart3, School,
   Briefcase, Wallet, UserCircle, Settings, Search, X, Sliders, Upload,
   ShieldCheck, Sparkles, Layers, BookOpenCheck, ChevronLeft, ChevronRight,
-  ScrollText,
+  ScrollText, DoorOpen,
 } from "lucide-react";
 import logo from "@/assets/logo.svg";
 import { Button } from "@/components/ui/button";
@@ -74,6 +74,7 @@ export const navigationSections: NavigationSection[] = [
       { title: "Campus", icon: MapPin, href: "/campus", description: "Gestion multi-campus et implantations" , requiredPermission: "academic.read" },
       { title: "Départements", icon: Building2, href: "/departements", description: "Unités académiques et facultés" , requiredPermission: "academic.read" },
       { title: "Filières & Cursus", icon: BookOpen, href: "/filieres", description: "Programmes de formation et diplômes" , requiredPermission: "academic.read" },
+      { title: "Salles", icon: DoorOpen, href: "/salles", description: "Inventaire des salles et conflits d'emploi du temps" , requiredPermission: "academic.read" },
       { title: "Cycles, Niveaux & Classes", icon: BookOpenCheck, href: "/academic-structure", description: "Taxonomie LMD et classes par filière" , requiredPermission: "academic.read" },
       { title: "Promotions & Cohortes", icon: GraduationCap, href: "/promotions", description: "Sessions et années d'études" , requiredPermission: "academic.read" },
       { title: "Sessions Académiques", icon: CalendarDays, href: "/sessions", description: "Sessions et périodes de paiement" , requiredPermission: "academic.read" },

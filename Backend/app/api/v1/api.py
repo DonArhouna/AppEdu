@@ -18,10 +18,12 @@ from app.api.v1.endpoints import (
     etudiants_import,
     documents,
     pedagogie,
+    salles,
     bulletins,
     note_import,
     finances,
     relances,
+    paiement_en_ligne,
     users,
     portals,
     admissions,
@@ -90,6 +92,10 @@ api_router.include_router(
     tags=["Import de notes"],
 )
 api_router.include_router(pedagogie.router, prefix="/pedagogie", tags=["Pédagogie & Notes"])
+# Les salles sont montées après ``pedagogie`` : leurs chemins ne risquent
+# pas d'être captés (``/pedagogie`` n'a pas de route ``/{x}`` générique), et
+# l'inventaire des lieux reste lisible au même niveau que la structure.
+api_router.include_router(salles.router, prefix="/structure", tags=["Salles"])
 # Le bulletin est montee sous ``/pedagogie`` : c'est un document de notes, et
 # il se telecharge au meme endroit que les notes qu'il reprend. La route
 # litterale ``/bulletins/...`` ne peut pas etre captee par une route a
@@ -104,6 +110,14 @@ api_router.include_router(
     relances.router,
     prefix="/finances",
     tags=["Relances de facturation"],
+)
+# Paiements en ligne : les liens du personnel vivent sous ``/finances``, la
+# porte de la famille sous ``/public`` (sans authentification, gardée par le
+# jeton du lien).
+api_router.include_router(
+    paiement_en_ligne.router,
+    prefix="/finances",
+    tags=["Paiements en ligne"],
 )
 api_router.include_router(users.router, prefix="/users", tags=["Administration des utilisateurs"])
 api_router.include_router(portals.router, prefix="/portail", tags=["Portails auto-service"])

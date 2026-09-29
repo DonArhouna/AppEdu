@@ -13,9 +13,10 @@ retroagir sur une relance de janvier.
 """
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
 from sqlalchemy import JSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -46,7 +47,7 @@ class Relance(Base):
     #: lisible d'un bout a l'autre.
     moyen: Mapped[str] = mapped_column(String(30), nullable=False)
     #: Total reclame ce jour-la.
-    montant_reclame: Mapped[float] = mapped_column(Float, nullable=False)
+    montant_reclame: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     #: Les factures concernees, avec leur reste au moment de la relance.
     factures_concernees: Mapped[List[Dict[str, Any]]] = mapped_column(
         "factures_concernees", JSONType, nullable=False, default=list
@@ -57,10 +58,19 @@ class Relance(Base):
     message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     #: Solde constate apres la relance. ``NULL`` tant qu'aucun encaissement
     #: n'a suivi : une relance efficace n'est pas un solde sur du papier.
-    solde_apres: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    solde_apres: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
     relance_par_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("utilisateurs.id", ondelete="SET NULL"), nullable=True
     )
+    #: Trace du dernier envoi de la lettre par email (lot 4). ``NULL`` tant
+    #: qu'aucun envoi n'a ete demande ; le statut dit ce qui s'est passe —
+    #: ``envoye`` (parti), ``simule`` (SMTP non configure) ou ``echec``
+    #: (serveur de courrier injoignable). L'application ne pretend jamais
+    #: avoir contacte un etudiant qu'elle n'a pas contacte.
+    email_envoye_le: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    email_statut: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

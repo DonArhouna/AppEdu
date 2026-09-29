@@ -19,6 +19,7 @@ import type {
   ApiRecord,
   AuditEvent,
   AuthUser,
+  AuthSessionList,
   Campus,
   Candidature,
   CandidaturePage,
@@ -38,9 +39,15 @@ import type {
   TeachingUnit,
   Absence,
   Course,
+  ConflitEdt,
+  Salle,
   BalanceResponse,
   FeeGrid,
   Invoice,
+  PaiementIntention,
+  PaiementIntentionCreee,
+  ResumeFamille,
+  ConfirmationPaiement,
   LoginResponse,
   Note,
   Payment,
@@ -92,12 +99,16 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api/
 
 const AUTH_TOKEN_KEY = "emp_auth_token";
 const USER_KEY = "emp_auth_user";
+/** Session révocable (lot 2) : le jeton de rafraîchissement, jamais exposé. */
+const REFRESH_TOKEN_KEY = "emp_auth_refresh";
 const AUTH_UNAUTHORIZED_EVENT = "emp_auth_unauthorized";
 
 export interface ApiResult<T> {
   data?: T;
   error?: string;
   status: number;
+  /** Total global d'une liste paginée (en-tête ``X-Total-Count``). */
+  total?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +124,18 @@ function getHeaders(): Record<string, string> {
     headers["Authorization"] = `Bearer ${token}`;
   }
   return headers;
+}
+
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+export function setRefreshToken(jeton: string | null | undefined): void {
+  if (jeton) {
+    localStorage.setItem(REFRESH_TOKEN_KEY, jeton);
+  } else {
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  }
 }
 
 export function extractErrorMessage(
@@ -143,13 +166,85 @@ export function extractErrorMessage(
   return String(detail);
 }
 
+/**
+ * Une seule rotation a la fois : les requêtes qui tombent en 401 pendant un
+ * rafraîchissement en cours s'y abonnent, au lieu d'en relancer chacune un.
+ * Sans verrou, N requêtes parallèles produiraient N rotations — et la
+ * rotation N+1 revoquerait le jeton que N requêtes viennent de recevoir.
+ */
+let rotationEnCours: Promise<boolean> | null = null;
+
+async function tournerJeton(): Promise<boolean> {
+  const jetonActuel = getRefreshToken();
+  if (!jetonActuel) {
+    return false;
+  }
+  try {
+    const reponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ refresh_token: jetonActuel }),
+    });
+    if (!reponse.ok) {
+      return false;
+    }
+    const corps = (await reponse.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+    };
+    if (!corps.access_token || !corps.refresh_token) {
+      return false;
+    }
+    // La rotation rend un NOUVEAU jeton de rafraîchissement : l'ancien est
+    // déjà révoqué côté serveur, le garder reviendrait à le rejouer — et le
+    // rejeu ferme toutes les sessions du compte.
+    localStorage.setItem(AUTH_TOKEN_KEY, corps.access_token);
+    setRefreshToken(corps.refresh_token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Tente un rafraîchissement silencieux. Résout `true` si un NOUVEAU jeton
+ * d'accès est disponible : l'appelant peut alors rejouer SA requête une fois.
+ */
+async function rafraichirSilencieusement(): Promise<boolean> {
+  if (!rotationEnCours) {
+    rotationEnCours = tournerJeton().finally(() => {
+      rotationEnCours = null;
+    });
+  }
+  return rotationEnCours;
+}
+
+function abandonnerSession(): void {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+}
+
+interface RequestOptionsEtendues extends RequestInit {
+  /**
+   * Endpoint public (lien de paiement de la famille) : n'envoie pas le
+   * jeton d'authentification et ne déclenche pas de rafraîchissement — la
+   * porte de la famille ne doit jamais réveiller la session du secrétaire
+   * qui, par hasard, utiliserait le même navigateur.
+   */
+  skipAuth?: boolean;
+}
+
 async function request<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestOptionsEtendues = {},
+  dejaRafraichi = false
 ): Promise<ApiResult<T>> {
   const url = `${API_BASE_URL}${endpoint}`;
+  const { skipAuth, ...optionsFetch } = options;
   try {
-    const headers: Record<string, string> = { ...getHeaders() };
+    const headers: Record<string, string> = skipAuth ? {} : { ...getHeaders() };
     if (options.headers instanceof Headers) {
       options.headers.forEach((value, key) => {
         headers[key] = value;
@@ -166,15 +261,22 @@ async function request<T>(
       delete headers["Content-Type"];
     }
     const response = await fetch(url, {
-      ...options,
+      ...optionsFetch,
       headers,
     });
 
     const status = response.status;
-    if (status === 401) {
-      localStorage.removeItem(AUTH_TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
-      window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+    if (status === 401 && !skipAuth) {
+      // L'endpoint de rafraîchissement lui-même ne se rafraîchit pas : la
+      // rotation qui échoue est une fin de session, pas un nouvel essai.
+      const jetonRefus = endpoint.startsWith("/auth/refresh");
+      const rafraichi = !jetonRefus && !dejaRafraichi && (await rafraichirSilencieusement());
+      if (rafraichi) {
+        // Une seule seconde tentative : la session vient d'être prolongée,
+        // un nouvel échec 401 signale autre chose qu'une expiration.
+        return request<T>(endpoint, options, true);
+      }
+      abandonnerSession();
     }
     if (status === 204) {
       return { status };
@@ -188,7 +290,7 @@ async function request<T>(
       return { error: errMsg, status };
     }
 
-    return { data: json as T, status };
+    return { data: json as T, status, total: parseTotal(response) };
   } catch (err: unknown) {
     // Mode dégradé / serveur backend inaccessible
     return {
@@ -198,16 +300,28 @@ async function request<T>(
   }
 }
 
-async function requestBlob(endpoint: string): Promise<ApiResult<Blob>> {
+function parseTotal(response: Response): number | undefined {
+  const brut = response.headers.get("X-Total-Count");
+  if (brut === null) return undefined;
+  const nombre = Number(brut);
+  return Number.isFinite(nombre) ? nombre : undefined;
+}
+
+async function requestBlob(
+  endpoint: string,
+  dejaRafraichi = false
+): Promise<ApiResult<Blob>> {
   try {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       headers: getHeaders(),
     });
     const status = response.status;
     if (status === 401) {
-      localStorage.removeItem(AUTH_TOKEN_KEY);
-      localStorage.removeItem(USER_KEY);
-      window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+      const rafraichi = !dejaRafraichi && (await rafraichirSilencieusement());
+      if (rafraichi) {
+        return requestBlob(endpoint, true);
+      }
+      abandonnerSession();
     }
     if (!response.ok) {
       const json = await response.json().catch(() => null);
@@ -239,11 +353,20 @@ export const authApi = {
     if (res.data?.access_token) {
       localStorage.setItem(AUTH_TOKEN_KEY, res.data.access_token);
       localStorage.setItem(USER_KEY, JSON.stringify(res.data.user));
+      // Le serveur émet une session révocable : son jeton permet la rotation
+      // silencieuse. Absent (backend antérieur au lot 2) : on fonctionne
+      // comme avant, sans dégradation.
+      setRefreshToken(res.data.refresh_token ?? null);
     }
     return res;
   },
 
   getMe: () => request<AuthUser>("/auth/me"),
+  getSessions: () => request<AuthSessionList>("/auth/sessions"),
+  fermerSession: (sessionId: string) =>
+    request<void>(`/auth/sessions/${sessionId}`, { method: "DELETE" }),
+  fermerAutresSessions: () =>
+    request<void>("/auth/sessions/fermer-autres", { method: "POST" }),
   updateMe: (data: { nom?: string; prenom?: string; telephone?: string | null }) =>
     request<AuthUser>("/auth/me", {
       method: "PATCH",
@@ -255,9 +378,29 @@ export const authApi = {
       body: JSON.stringify(data),
     }),
 
-  logout: () => {
+  /**
+   * Ferme la session CÔTÉ SERVEUR quand un jeton de rafraîchissement
+   * existe : révoqué, il ne rafraîchira plus rien, même intercepté. Sans
+   * jeton (backend antérieur au lot 2), la déconnexion reste locale.
+   */
+  logout: async () => {
+    const jeton = getRefreshToken();
+    if (jeton) {
+      try {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
+          method: "POST",
+          headers: { ...getHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: jeton }),
+        });
+      } catch {
+        // Le serveur est injoignable : la session locale se ferme quand
+        // même. Un logout qui exigerait le serveur serait un logout qui
+        // échoue chaque fois que le serveur tombe.
+      }
+    }
     localStorage.removeItem(AUTH_TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
   },
 
   getToken: () => localStorage.getItem(AUTH_TOKEN_KEY),
@@ -641,6 +784,19 @@ export const bulletinsApi = {
     ),
 
   /**
+   * Le lot d'une classe entiere : un ZIP, un bulletin par etudiant.
+   *
+   * Le serveur reutilise le meme rendu que le PDF individuel — le lot ne
+   * peut pas diverger du document signe un par un. Un etudiant dont le
+   * bulletin echoue n'interrompt pas l'archive : un rapport
+   * `_bulletins-non-produits.txt` la signale.
+   */
+  telechargerLot: (classeId: string, semestreId: string) =>
+    requestBlob(
+      `/pedagogie/bulletins/classe/${encodeURIComponent(classeId)}/${encodeURIComponent(semestreId)}/archive`
+    ),
+
+  /**
    * Les matieres sur lesquelles l'etudiant peut repasser une epreuve.
    *
    * `etat` distingue trois situations qui ne se remedient pas de la meme
@@ -655,6 +811,21 @@ export const bulletinsApi = {
 };
 
 export const structureApi = {
+  // Salles (lot 3)
+  getSalles: () => request<Salle[]>("/structure/salles"),
+  createSalle: (data: unknown) =>
+    request<Salle>("/structure/salles", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateSalle: (id: string, data: unknown) =>
+    request<Salle>(`/structure/salles/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deleteSalle: (id: string) =>
+    request<void>(`/structure/salles/${id}`, { method: "DELETE" }),
+
   // Campus
   getCampuses: () => request<Campus[]>("/structure/campuses"),
   createCampus: (data: unknown) =>
@@ -760,12 +931,17 @@ export const etudiantsApi = {
     filiere?: string;
     sessionId?: string;
     statut?: string;
+    /** Pagination additive : absent, la réponse reste complète. */
+    limit?: number;
+    offset?: number;
   }) => {
     const params = new URLSearchParams();
     if (filters?.search) params.append("search", filters.search);
     if (filters?.filiere) params.append("filiere", filters.filiere);
     if (filters?.sessionId) params.append("session_id", filters.sessionId);
     if (filters?.statut) params.append("statut", filters.statut);
+    if (filters?.limit != null) params.append("limit", String(filters.limit));
+    if (filters?.offset) params.append("offset", String(filters.offset));
     return request<Student[]>(`/etudiants/?${params.toString()}`);
   },
   getSummary: (filters?: {
@@ -837,6 +1013,9 @@ export const pedagogieApi = {
     }),
   deleteCours: (id: string) =>
     request<void>(`/pedagogie/cours/${id}`, { method: "DELETE" }),
+
+  // Audit des conflits d'emploi du temps (lot 3)
+  getCoursConflits: () => request<ConflitEdt[]>("/pedagogie/cours/conflits"),
 
   // Examens
   getExamens: (sessionId?: string, matiereId?: string) => {
@@ -952,6 +1131,17 @@ export const relancesApi = {
     requestBlob(`/finances/relances/${encodeURIComponent(relanceId)}/lettre`),
 
   /**
+   * Envoie la lettre de relance (PDF) par email. Acte explicite : le
+   * résultat revient sur la relance — ``envoye``, ``simule`` (SMTP non
+   * configuré, l'application le dit) ou ``echec`` (à retenter).
+   */
+  envoyerLettreEmail: (relanceId: string) =>
+    request<Relance>(
+      `/finances/relances/${encodeURIComponent(relanceId)}/envoyer-email`,
+      { method: "POST" }
+    ),
+
+  /**
    * Moyens declares par le serveur. L'ecran n'invente pas de liste : une
    * saisie libre diverge des le premier synonymes et rend l'historique
    * illisible.
@@ -963,6 +1153,32 @@ export const relancesApi = {
 // 6. Finances & Encaissements
 // ---------------------------------------------------------------------------
 export const financesApi = {
+  // Paiements en ligne (lot 4b)
+  creerLienPaiement: (data: { facture_id: string; montant?: number; validite_jours?: number }) =>
+    request<PaiementIntentionCreee>("/finances/paiements-en-ligne", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getIntentionsPaiement: (statut?: string) =>
+    request<PaiementIntention[]>(
+      `/finances/paiements-en-ligne${statut ? `?statut=${statut}` : ""}`
+    ),
+  annulerLienPaiement: (intentionId: string) =>
+    request<void>(`/finances/paiements-en-ligne/${intentionId}/annuler`, {
+      method: "POST",
+    }),
+  /** Porte publique de la famille : sans authentification, gardée par le jeton. */
+  lireLienPaiement: (token: string) =>
+    request<ResumeFamille>(
+      `/finances/public/paiement/${encodeURIComponent(token)}`,
+      { skipAuth: true }
+    ),
+  confirmerLienPaiement: (token: string, data: { reference?: string }) =>
+    request<ConfirmationPaiement>(
+      `/finances/public/paiement/${encodeURIComponent(token)}/confirmer`,
+      { method: "POST", body: JSON.stringify(data), skipAuth: true }
+    ),
+
   // Grilles tarifaires
   getGrillesTarifaires: (filters?: { filiere_id?: string; actif?: boolean }) => {
     const params = new URLSearchParams();

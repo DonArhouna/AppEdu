@@ -19,7 +19,10 @@ que personne n'a emis.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import io
+import re
+import zipfile
+from typing import Any, Dict, List, Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
@@ -27,6 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, require_pedagogy_grades_read
+from app.models.academic import Classe
 from app.models.deliberation import Deliberation, DeliberationDecision
 from app.models.etablissement import Etablissement
 from app.models.etudiant import Etudiant
@@ -34,7 +38,7 @@ from app.models.session_academique import SessionAcademique
 from app.models.structure import Semestre
 from app.services.bulletin_pdf import rendre_bulletin_pour
 from app.services import deliberation_service as service
-from app.services.bulletin_service import composer_bulletin
+from app.services.bulletin_service import Bulletin, composer_bulletin
 from app.services.deliberation_service import BAREME_REPLI
 from app.services.semestre_service import bilan_semestre, recap_annuel
 
@@ -102,7 +106,7 @@ async def _composer(db: AsyncSession, etudiant_id: str, semestre_id: str):
         decisions=decisions,
     )
 
-    bareme: List[Dict[str, Any]] = list(BAREME_REPLI["bareme_mentions"])
+    bareme: Sequence[Dict[str, Any]] = list(BAREME_REPLI["bareme_mentions"])
     if decision is not None:
         regles = getattr(decision, "regles", None) or {}
         if regles.get("bareme_mentions"):
@@ -139,7 +143,7 @@ async def _composer(db: AsyncSession, etudiant_id: str, semestre_id: str):
     return bulletin
 
 
-def _en_json(bulletin) -> Dict[str, Any]:
+def _en_json(bulletin: Bulletin) -> Dict[str, Any]:
     """Le contenu du bulletin, en JSON, tel qu'il sera imprime."""
 
     return {
@@ -217,6 +221,119 @@ def _en_json(bulletin) -> Dict[str, Any]:
             "deliberation_absente": bulletin.deliberation_absente,
         },
     }
+
+
+@router.get(
+    "/bulletins/classe/{classe_id}/{semestre_id}/archive",
+    summary="Bulletins d'une classe entiere pour un semestre (ZIP)",
+)
+async def telecharger_bulletins_classe(
+    classe_id: str,
+    semestre_id: str,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(require_pedagogy_grades_read),
+):
+    """Le lot de toute une classe : un ZIP, un bulletin par etudiant.
+
+    La seance de signature du directeur ne demande pas trente clics : elle
+    demande une liasse. L'archive reprend, pour chaque etudiant inscrit dans
+    la classe, **exactement** le PDF que l'ecran individuel produit — le meme
+    calcul, la meme mise en page. Un lot qui imiterait le bulletin sans le
+    recalculer pourrait diverger du document signe un par un ; il n'y a donc
+    pas deux chemins de rendu.
+
+    Les garde-fous du bulletin individuel tient dans le lot : une classe sans
+    etudiant refuse (un ZIP vide se lirait comme des bulletins perdus), et un
+    etudiant dont le bulletin echoue n'interrompt pas les autres — son nom
+    figure dans un rapport joint a l'archive, jamais perdu en silence.
+    """
+
+    classe = await db.get(Classe, classe_id)
+    if classe is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cette classe n'existe pas.",
+        )
+
+    semestre = await db.get(Semestre, semestre_id)
+    if semestre is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ce semestre n'existe pas. Créez-le depuis Paramètres ▸ "
+                   "Structure ▸ Semestres.",
+        )
+
+    etudiants = list(
+        (
+            await db.execute(
+                select(Etudiant)
+                .where(Etudiant.classe_id == classe_id)
+                .order_by(Etudiant.nom, Etudiant.prenom)
+            )
+        ).scalars().all()
+    )
+    if not etudiants:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"La classe {classe.nom} n'a aucun étudiant inscrit : rien à "
+                "télécharger. Les bulletins se créent par dossier, pas par "
+                "promotion vide."
+            ),
+        )
+
+    etablissement = (
+        await db.execute(select(Etablissement).limit(1))
+    ).scalars().first()
+    session = await db.get(SessionAcademique, semestre.session_id)
+
+    archive = io.BytesIO()
+    echecs: List[Dict[str, str]] = []
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as lot:
+        for etudiant in etudiants:
+            try:
+                decision = await service.derniere_decision(
+                    db, etudiant_id=etudiant.id, session_id=semestre.session_id
+                )
+                contenu, nom_fichier = await rendre_bulletin_pour(
+                    db,
+                    etudiant=etudiant,
+                    semestre=semestre,
+                    etablissement=etablissement,
+                    session=session,
+                    decision=decision,
+                )
+                lot.writestr(nom_fichier, contenu)
+            except Exception as exception:  # noqa: BLE001
+                # Un etudiant en erreur ne prive pas la classe de son lot :
+                # le secretariat imprime les vingt-neuf autres, et le rapport
+                # dit lequel reprodure a la main. Avaler l'erreur sans trace
+                # ferait croire a un bulletin perdu dans la liasse.
+                echecs.append({
+                    "matricule": etudiant.matricule or "?",
+                    "etudiant": f"{etudiant.nom} {etudiant.prenom}",
+                    "raison": str(exception) or exception.__class__.__name__,
+                })
+
+        if echecs:
+            rapport = ["Bulletins non produits :", ""]
+            for echec in echecs:
+                rapport.append(
+                    f"- {echec['matricule']} — {echec['etudiant']} : "
+                    f"{echec['raison']}"
+                )
+            lot.writestr("_bulletins-non-produits.txt", "\n".join(rapport))
+
+    morceau = re.compile(r"[^A-Za-z0-9_-]+")
+    nom_archive = (
+        f"bulletins_{morceau.sub('-', (classe.nom or classe_id).strip())}_"
+        f"{morceau.sub('-', semestre.libelle or f'S{semestre.numero}')}.zip"
+    )
+    return Response(
+        content=archive.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{nom_archive}"'},
+    )
 
 
 @router.get(

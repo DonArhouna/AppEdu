@@ -8,6 +8,7 @@ Endpoints Finances & Encaissements :
 
 from typing import List, Optional
 from datetime import date, datetime
+from decimal import Decimal
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -234,7 +235,7 @@ async def create_facture(
         etudiant_id=payload.etudiant_id,
         session_id=payload.session_id,
         montant_total=payload.montant_total,
-        montant_paye=0.0,
+        montant_paye=Decimal("0.00"),
         date_emission=payload.date_emission,
         date_echeance=payload.date_echeance,
         statut="emise",
@@ -353,21 +354,21 @@ async def create_paiement(
                 detail="La période de paiement n'appartient pas à cette session.",
             )
         paid_period_result = await db.execute(
-            select(func.coalesce(func.sum(Paiement.montant), 0.0)).where(
+            select(func.coalesce(func.sum(Paiement.montant), Decimal("0.00"))).where(
                 Paiement.etudiant_id == payload.etudiant_id,
                 Paiement.session_id == payload.session_id,
                 Paiement.periode_id == payload.periode_id,
                 Paiement.statut == "valide",
             )
         )
-        paid_period_amount = float(paid_period_result.scalar() or 0.0)
+        paid_period_amount = paid_period_result.scalar() or Decimal("0.00")
         if periode.montant_estime is not None and periode.montant_estime > 0:
-            if paid_period_amount >= float(periode.montant_estime):
+            if paid_period_amount >= periode.montant_estime:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Cette période a déjà été entièrement réglée pour cet étudiant.",
                 )
-            if paid_period_amount + payload.montant > float(periode.montant_estime):
+            if paid_period_amount + payload.montant > periode.montant_estime:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="Le paiement dépasse le solde restant de la période.",
@@ -392,7 +393,7 @@ async def create_paiement(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Le montant du paiement dépasse le solde de la facture.",
             )
-        facture.montant_paye = round(facture.montant_paye + payload.montant, 2)
+        facture.montant_paye = (facture.montant_paye + payload.montant).quantize(Decimal("0.01"))
         facture.statut = "payee" if facture.montant_paye >= facture.montant_total else "partielle"
 
     paiement_id = str(uuid.uuid4())
@@ -452,7 +453,8 @@ async def create_paiement(
         },
         "details_paiement": {
             "periode": nom_periode,
-            "montant": payload.montant,
+            # Colonne JSON : flottant d'affichage a deux decimales.
+            "montant": float(payload.montant),
             "mode_paiement": payload.mode_paiement,
             "reference": reference,
             "encaisse_par": current_user.full_name,
@@ -460,7 +462,10 @@ async def create_paiement(
         "facture": {
             "id": facture.id if facture else None,
             "numero_facture": facture.numero_facture if facture else None,
-            "solde_restant": facture.reste_a_payer if facture else 0.0,
+            # Le reçu est une colonne JSON : un Decimal n'y est pas
+            # representable.  Le flottant d'affichage suffit, l'exactitude
+            # vit dans la facture elle-même.
+            "solde_restant": float(facture.reste_a_payer) if facture else 0.0,
         } if facture else None,
     }
 
@@ -525,7 +530,8 @@ async def get_balance_agee(db: AsyncSession = Depends(get_db), _auth=Depends(req
     factures = res.scalars().all()
 
     items: List[BalanceAgeeItem] = []
-    total_creances = 0.0
+    zero = Decimal("0.00")
+    total_creances = zero
 
     for f in factures:
         reste = f.reste_a_payer
@@ -534,10 +540,10 @@ async def get_balance_agee(db: AsyncSession = Depends(get_db), _auth=Depends(req
         total_creances += reste
         retard_jours = (today - f.date_echeance).days
 
-        non_echu = reste if retard_jours <= 0 else 0.0
-        retard_1_30 = reste if 1 <= retard_jours <= 30 else 0.0
-        retard_31_60 = reste if 31 <= retard_jours <= 60 else 0.0
-        retard_plus_60 = reste if retard_jours > 60 else 0.0
+        non_echu = reste if retard_jours <= 0 else zero
+        retard_1_30 = reste if 1 <= retard_jours <= 30 else zero
+        retard_31_60 = reste if 31 <= retard_jours <= 60 else zero
+        retard_plus_60 = reste if retard_jours > 60 else zero
 
         items.append(
             BalanceAgeeItem(
@@ -555,6 +561,6 @@ async def get_balance_agee(db: AsyncSession = Depends(get_db), _auth=Depends(req
 
     return BalanceAgeeResponse(
         date_calcul=today,
-        total_creances=round(total_creances, 2),
+        total_creances=total_creances.quantize(Decimal("0.01")),
         items=items,
     )

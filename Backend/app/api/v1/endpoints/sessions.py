@@ -16,6 +16,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db, require_academic_read, require_academic_structure_write
+from app.models.admissions import Candidature
+from app.models.finance import Facture, Paiement
 from app.models.session_academique import SessionAcademique, PeriodePaiement
 from app.models.structure import Semestre
 from app.models.etudiant import Etudiant
@@ -302,6 +304,45 @@ async def delete_session(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Des inscriptions sont encore rattachées à cette session.",
+        )
+    # La base refuserait deja (FK RESTRICT depuis 0023) : un 409 avec sa
+    # raison vaut mieux qu'une erreur SQL, et les ecritures comptables sont
+    # le seul cas ou la suppression ne doit JAMAIS devenir possible.
+    factures = await db.execute(
+        select(Facture.id).where(Facture.session_id == session_id).limit(1)
+    )
+    if factures.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Des factures sont rattachées à cette session : les pièces "
+                "comptables ne peuvent pas être supprimées. Clôturez la "
+                "session plutôt que de la détruire."
+            ),
+        )
+    paiements = await db.execute(
+        select(Paiement.id).where(Paiement.session_id == session_id).limit(1)
+    )
+    if paiements.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Des paiements sont rattachés à cette session : les reçus "
+                "émis doivent rester consultables. Clôturez la session "
+                "plutôt que de la détruire."
+            ),
+        )
+    candidatures = await db.execute(
+        select(Candidature.id).where(Candidature.session_id == session_id).limit(1)
+    )
+    if candidatures.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Des candidatures sont rattachées à cette session : le "
+                "processus d'admission doit rester traçable. Clôturez la "
+                "session plutôt que de la détruire."
+            ),
         )
 
     await db.delete(session)

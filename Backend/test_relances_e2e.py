@@ -703,6 +703,70 @@ async def _run() -> None:
         assert introuvable.json()["detail"], "Le refus doit dire pourquoi."
         print("  [OK] Lettre hors du registre des documents officiels ; refus explicite.")
 
+        # ------------------------------------------------------------------
+        # Envoi de la lettre par email (lot 4)
+        # ------------------------------------------------------------------
+        # SMTP non configure : l'envoi passe en SIMULATION. L'application
+        # fait ce qu'elle doit (trace consignee, PDF genere) et **dit** que
+        # rien n'est parti — elle ne pretend jamais avoir contacte qui que
+        # ce soit.
+        email_manquant = await client.post(
+            f"/api/v1/finances/relances/{seconde.json()['relance']['id']}/envoyer-email",
+            headers=admin,
+        )
+        # L'etudiant de cette relance peut n'avoir pas d'email : les deux
+        # refus sont legimes, on verifie celui qui se produit.
+        assert email_manquant.status_code in (422, 200), email_manquant.text
+        if email_manquant.status_code == 422:
+            assert "email" in email_manquant.json()["detail"].lower()
+            print("  [OK] Envoi refuse pour un etudiant sans adresse email (422 nomme).")
+        else:
+            corps = email_manquant.json()
+            assert corps["email_statut"] == "simule", corps
+            print("  [OK] Envoi simule (SMTP non configure) : trace consignee, rien ne part.")
+
+        # Un etudiant AVEC email : envoi simule trace sur la relance.
+        # On renseigne d'abord son adresse, pour couvrir le chemin de l'envoi.
+        adresse = await client.put(
+            f"/api/v1/etudiants/{ancien['id']}",
+            json={"email": "ancien.etudiant@relances-e2e.org"},
+            headers=admin,
+        )
+        assert adresse.status_code == 200, adresse.text
+        relance_email = await client.post(
+            "/api/v1/finances/relances",
+            json={"etudiant_id": ancien["id"], "moyen": "Email"},
+            headers=admin,
+        )
+        assert relance_email.status_code == 201, relance_email.text
+        relance_email_id = relance_email.json()["relance"]["id"]
+        envoi = await client.post(
+            f"/api/v1/finances/relances/{relance_email_id}/envoyer-email",
+            headers=admin,
+        )
+        assert envoi.status_code == 200, envoi.text
+        corps = envoi.json()
+        assert corps["email_statut"] == "simule", corps
+        assert corps["email_envoye_le"], corps
+        # La trace survit a la lecture : l'historique montre ce qu'il
+        # s'est passe, pas ce qu'on voudrait qu'il se soit passe.
+        historique_trace = (
+            await client.get(
+                f"/api/v1/finances/relances/historique?etudiant_id={ancien['id']}",
+                headers=admin,
+            )
+        ).json()
+        la_trace = [r for r in historique_trace if r["id"] == relance_email_id]
+        assert la_trace and la_trace[0]["email_statut"] == "simule", la_trace
+        print("  [OK] Envoi simule trace sur la relance et visible dans l'historique.")
+
+        # Une relance inexistante n'envoie rien.
+        introuvable = await client.post(
+            "/api/v1/finances/relances/relance-inexistante/envoyer-email",
+            headers=admin,
+        )
+        assert introuvable.status_code == 404, introuvable.text
+
     print("E2E relances de facturation : OK")
 
 

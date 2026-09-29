@@ -21,6 +21,7 @@ import io
 import logging
 import os
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence
 
 from reportlab.lib import colors
@@ -109,6 +110,11 @@ def texte_ou_valeur(valeur: Any) -> str:
         return valeur.strftime("%d/%m/%Y")
     if isinstance(valeur, float):
         return f"{valeur:,.2f}".replace(",", " ").replace(".", ",")
+    if isinstance(valeur, Decimal):
+        # Un montant decimal ne passe pas par str() : la valeur canonique
+        # "150000.00" deviendrait "150000.00" sans separateur, et le format
+        # doit rester identique a celui des floats historiques.
+        return f"{valeur:,.2f}".replace(",", " ").replace(".", ",")
     texte = str(valeur).strip()
     return texte or VALEUR_ABSENTE
 
@@ -118,6 +124,8 @@ def montant(valeur: Optional[float], devise: str = "") -> str:
 
     if valeur is None:
         return VALEUR_ABSENTE
+    if isinstance(valeur, Decimal):
+        valeur = float(valeur)
     formate = f"{valeur:,.2f}".replace(",", " ").replace(".", ",")
     return f"{formate} {devise}".strip()
 

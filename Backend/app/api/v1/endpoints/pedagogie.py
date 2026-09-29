@@ -8,6 +8,7 @@ Endpoints Pédagogie & Délibération :
 """
 
 from typing import List, Optional
+import json
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,7 @@ from app.api.deps import (
     require_pedagogy_read,
     require_pedagogy_write,
 )
+from app.services import edt_service
 from app.models.etudiant import Etudiant
 from app.models.pedagogie import Cours, Examen, Note, Absence
 from app.models.structure import Filiere, Matiere, UniteEnseignement
@@ -105,6 +107,79 @@ async def _validate_note_scope(
 # ---------------------------------------------------------------------------
 # COURS
 # ---------------------------------------------------------------------------
+
+def _reponse_conflits(conflits) -> str:
+    """409 lisible : l'essentiel en une phrase, le detail en annexe.
+
+    La liste JSON complete est jointe a la fin du message : le frontend
+    l'affiche telle quelle, et un client programme peut la parser.
+    """
+    resume = ", ".join(
+        f"{c.matiere or c.cours_id} ({c.jour} {c.heure_debut}-{c.heure_fin})"
+        for c in conflits[:3]
+    )
+    plus = "…" if len(conflits) > 3 else ""
+    return (
+        f"Conflit d'emploi du temps : {len(conflits)} séance(s) occupent déjà "
+        f"cet emploi ({resume}{plus}). Détail : "
+        f"conflits={json.dumps([c.model_dump() for c in conflits], ensure_ascii=False)}"
+    )
+
+
+async def _verifier_seance_edt(
+    db: AsyncSession,
+    *,
+    jour_semaine: str,
+    heure_debut: str,
+    heure_fin: str,
+    salle: str,
+    enseignant_id: Optional[int],
+    cours_exclu_id: Optional[str] = None,
+    salle_modifiee: bool = True,
+) -> None:
+    """Les règles que toute séance publiée doit respecter.
+
+    Trois refus distincts, chacun nommé : un jour ou des horaires que l'on
+    ne sait pas lire (422), une salle declarée indisponible (422), une
+    séance déjà posée sur le même créneau dans la même salle ou devant le
+    même enseignant (409 — le créneau existe, il est pris).
+    """
+    if edt_service.jour_normalise(jour_semaine) is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Jour inconnu « %s ». Valeurs acceptées : %s."
+            % (jour_semaine, ", ".join(edt_service.JOURS_OUVRABLES)),
+        )
+    if not edt_service.horaires_valides(heure_debut, heure_fin):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Horaires invalides : l'heure de fin doit suivre l'heure de "
+                "début, au format HH:MM."
+            ),
+        )
+    salle_enregistree = await edt_service.salle_par_nom(db, salle)
+    if salle_modifiee and salle_enregistree is not None and not salle_enregistree.disponible:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"La salle « {salle_enregistree.nom} » est marquée indisponible "
+                "et n'accepte pas de nouvelle séance."
+            ),
+        )
+    conflits = await edt_service.trouver_conflits(
+        db,
+        jour_semaine=jour_semaine,
+        heure_debut=heure_debut,
+        heure_fin=heure_fin,
+        salle=salle,
+        enseignant_id=enseignant_id,
+        cours_exclu_id=cours_exclu_id,
+    )
+    if conflits:
+        raise HTTPException(status_code=409, detail=_reponse_conflits(conflits))
+
+
 @router.get("/cours", response_model=List[CoursResponse], summary="Lister les cours")
 async def list_cours(
     matiere_id: Optional[str] = None,
@@ -125,6 +200,14 @@ async def list_cours(
 
 @router.post("/cours", response_model=CoursResponse, status_code=status.HTTP_201_CREATED, summary="Créer un cours")
 async def create_cours(payload: CoursCreate, db: AsyncSession = Depends(get_db), _auth=Depends(require_pedagogy_write)):
+    await _verifier_seance_edt(
+        db,
+        jour_semaine=payload.jour_semaine,
+        heure_debut=payload.heure_debut,
+        heure_fin=payload.heure_fin,
+        salle=payload.salle,
+        enseignant_id=payload.enseignant_id,
+    )
     cours = Cours(id=payload.id or str(uuid.uuid4()), **payload.model_dump(exclude={"id"}))
     db.add(cours)
     await db.commit()
@@ -147,11 +230,47 @@ async def update_cours(
     end = data.get("heure_fin", cours.heure_fin)
     if end <= start:
         raise HTTPException(status_code=422, detail="L'heure de fin doit être postérieure à l'heure de début.")
+    # Les règles se verifient sur l'etat **resultant** de la modification,
+    # pas sur la seule charge utile : changer la salle d'un cours sans
+    # reverifier ses horaires laisserait un conflit passer. La salle, elle,
+    # n'est « modifiée » que si la charge utile la change : un cours déjà
+    # posé dans une salle devenue indisponible reste modifiable sur le
+    # reste (enseignant, horaires), sinon plus aucune correction ne serait
+    # possible sans déplacer d'abord le cours.
+    await _verifier_seance_edt(
+        db,
+        jour_semaine=data.get("jour_semaine", cours.jour_semaine),
+        heure_debut=start,
+        heure_fin=end,
+        salle=data.get("salle", cours.salle),
+        enseignant_id=data.get("enseignant_id", cours.enseignant_id),
+        cours_exclu_id=cours.id,
+        salle_modifiee="salle" in data and data["salle"] != cours.salle,
+    )
     for field, value in data.items():
         setattr(cours, field, value)
     await db.commit()
     await db.refresh(cours)
     return cours
+
+
+@router.get(
+    "/cours/conflits",
+    response_model=List[edt_service.ConflitEdt],
+    summary="Audit : lister les conflits d'emploi du temps existants",
+)
+async def list_conflits_cours(
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(require_pedagogy_read),
+):
+    """Les paires de cours déjà en conflit dans l'emploi du temps publié.
+
+    Le guard bloque désormais toute nouvelle séance contradictoire ; les
+    conflits créés **avant** le guard, eux, restent en base. Cet audit les
+    liste — par cours le plus récent, celui qui a pris le créneau — pour que
+    l'administration sache quoi replanifier.
+    """
+    return await edt_service.lister_conflits_existants(db)
 
 
 @router.delete("/cours/{cours_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Supprimer un cours")

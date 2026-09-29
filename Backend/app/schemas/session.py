@@ -6,6 +6,8 @@ from datetime import date, datetime
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.montant import Montant
+
 
 # ---------------------------------------------------------------------------
 # Période de Paiement
@@ -14,7 +16,7 @@ class PeriodePaiementBase(BaseModel):
     nom: str = Field(..., example="Tranche 1 - Octobre")
     mois: str = Field(..., example="Octobre")
     date_echeance: Optional[date] = None
-    montant_estime: Optional[float] = None
+    montant_estime: Optional[Montant] = Field(None, max_digits=14, decimal_places=2)
     pourcentage: Optional[float] = None
     ordre: int
 

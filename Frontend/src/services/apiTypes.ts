@@ -60,6 +60,19 @@ export interface SetupInitPayload {
   } | null;
 }
 
+export interface AuthSession {
+  id: string;
+  created_at: string;
+  expires_at: string;
+  last_used_at?: string | null;
+  actuelle: boolean;
+}
+
+export interface AuthSessionList {
+  sessions: AuthSession[];
+  total: number;
+}
+
 export interface AuthUser {
   id: number;
   email: string;
@@ -81,6 +94,12 @@ export interface LoginResponse {
   token_type: string;
   expires_in: number;
   user: AuthUser;
+  /**
+   * Jeton de rafraîchissement d'une session révocable (lot 2). Le serveur
+   * l'émet à chaque login ; le conserver ouvre la rotation silencieuse et
+   * la révocation. Un client qui l'ignore se comporte comme avant.
+   */
+  refresh_token?: string | null;
 }
 
 export interface SessionPeriod {
@@ -793,6 +812,50 @@ export interface Invoice {
   paiements?: Payment[];
 }
 
+export interface PaiementIntention {
+  id: string;
+  facture_id?: string | null;
+  etudiant_id: string;
+  etudiant_nom?: string | null;
+  montant: number;
+  provider: string;
+  statut: string;
+  expires_le: string;
+  paiement_id?: string | null;
+  created_at: string;
+}
+
+export interface PaiementIntentionCreee extends PaiementIntention {
+  facture_id: string | null;
+  session_id: string;
+  /** L'URL relative du lien — le jeton ne repassera jamais par l'API. */
+  lien: string;
+  token: string;
+}
+
+export interface ResumeFamille {
+  etablissement: string | null;
+  devise: string;
+  etudiant: string | null;
+  matricule: string | null;
+  facture: {
+    numero: string | null;
+    montant_total: number | null;
+    montant_paye: number | null;
+    reste_a_payer: number | null;
+  } | null;
+  montant_demande: number;
+  provider: string;
+  expire_le: string;
+}
+
+export interface ConfirmationPaiement {
+  paiement_id: string;
+  numero_recu: string;
+  montant: number;
+  mode_paiement: string;
+}
+
 export interface Note {
   id: string;
   etudiant_id: string;
@@ -827,6 +890,32 @@ export interface Course {
   heure_debut: string;
   heure_fin: string;
   type_cours: string;
+}
+
+export interface Salle {
+  id: string;
+  nom: string;
+  code: string;
+  campus_id?: string | null;
+  batiment?: string | null;
+  etage?: string | null;
+  capacite?: number | null;
+  type_salle: string;
+  equipements?: string | null;
+  disponible: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConflitEdt {
+  type: string;
+  cours_id: string;
+  matiere?: string | null;
+  enseignant_nom?: string | null;
+  salle?: string | null;
+  jour: string;
+  heure_debut: string;
+  heure_fin: string;
 }
 
 export interface StudentPortalData {
@@ -1224,6 +1313,8 @@ export interface Relance {
   created_at: string | null;
   nb_factures: number;
   factures_concernees: Record<string, unknown>[];
+  email_statut?: string | null;
+  email_envoye_le?: string | null;
   resolue: boolean;
 }
 

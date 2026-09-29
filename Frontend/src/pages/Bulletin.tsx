@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, Download, FileText, Loader2, Printer } from "lucide-react";
+import { AlertCircle, Download, FileText, FolderArchive, Loader2, Printer } from "lucide-react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -38,12 +38,19 @@ import {
 } from "@/components/ui/table";
 import {
   bulletinsApi,
+  academicApi,
   etudiantsApi,
   extractErrorMessage,
   sessionsApi,
   semestresApi,
 } from "@/services/apiClient";
-import type { Bulletin, RattrapageEtudiant, Semestre, Student } from "@/services/apiTypes";
+import type {
+  AcademicClass,
+  Bulletin,
+  RattrapageEtudiant,
+  Semestre,
+  Student,
+} from "@/services/apiTypes";
 
 /** Deux decimales, separateur francais : c'est ainsi que le bulletin imprime. */
 const nombre = (valeur: number | null | undefined, decimales = 2): string =>
@@ -51,10 +58,12 @@ const nombre = (valeur: number | null | undefined, decimales = 2): string =>
 
 export default function BulletinPage() {
   const [etudiants, setEtudiants] = useState<Student[]>([]);
+  const [classes, setClasses] = useState<AcademicClass[]>([]);
   const [sessions, setSessions] = useState<{ id: string; nom: string }[]>([]);
   const [semestres, setSemestres] = useState<Semestre[]>([]);
 
   const [etudiantId, setEtudiantId] = useState("");
+  const [classeLotId, setClasseLotId] = useState("");
   const [sessionId, setSessionId] = useState("");
   const [semestreId, setSemestreId] = useState("");
 
@@ -63,12 +72,14 @@ export default function BulletinPage() {
   const [chargement, setChargement] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
   const [telechargement, setTelechargement] = useState(false);
+  const [telechargementLot, setTelechargementLot] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [liste, seances] = await Promise.all([
+      const [liste, seances, repartitionClasses] = await Promise.all([
         etudiantsApi.getAll(),
         sessionsApi.getAll(),
+        academicApi.getClasses(),
       ]);
       if (liste.error) {
         setErreur(extractErrorMessage(liste.error, "Étudiants illisibles."));
@@ -79,6 +90,7 @@ export default function BulletinPage() {
       if (seances.data && seances.data.length > 0) {
         setSessionId(seances.data[0].id);
       }
+      setClasses((repartitionClasses.data ?? []) as AcademicClass[]);
     })();
   }, []);
 
@@ -147,6 +159,38 @@ export default function BulletinPage() {
     lien.click();
     URL.revokeObjectURL(url);
     toast.success("Bulletin téléchargé. Il reste à le signer et à le cacheter.");
+  };
+
+  /**
+   * Le lot d'une classe entiere. L'archive ne requiert pas d'avoir lu un
+   * bulletin d'abord : la classe se signe en seance, sans relecture ecran
+   * par etudiant. Les erreurs par etudiant figurent dans le rapport joint.
+   */
+  const telechargerLot = async () => {
+    if (!classeLotId || !semestreId) return;
+    setTelechargementLot(true);
+    const resultat = await bulletinsApi.telechargerLot(classeLotId, semestreId);
+    setTelechargementLot(false);
+    if (resultat.error || !resultat.data) {
+      toast.error(
+        extractErrorMessage(resultat.error, "Archive des bulletins indisponible.")
+      );
+      return;
+    }
+    const url = URL.createObjectURL(resultat.data);
+    const lien = document.createElement("a");
+    const classe = classes.find((c) => c.id === classeLotId);
+    const nomClasse = (classe?.code || classe?.nom || "classe")
+      .replace(/[^A-Za-z0-9_-]+/g, "-");
+    const semestre = semestres.find((s) => s.id === semestreId);
+    lien.href = url;
+    lien.download = `bulletins_${nomClasse}_${semestre?.libelle ?? "S"}.zip`;
+    lien.click();
+    URL.revokeObjectURL(url);
+    toast.success(
+      "Archive des bulletins de la classe téléchargée. Rapport des bulletins "
+      + "non produits inclus le cas échéant."
+    );
   };
 
   return (
@@ -267,11 +311,60 @@ export default function BulletinPage() {
           <AlertTitle>Aucun bulletin affiché</AlertTitle>
           <AlertDescription>
             Choisissez un étudiant et un semestre, puis lisez le bulletin. Le
-            téléchargement n'est possible qu'après : un document officiel
-            imprimé sans avoir été relu n'est vérifiable par personne.
+            téléchargement individuel n'est possible qu'après : un document
+            officiel imprimé sans avoir été relu n'est vérifiable par personne.
           </AlertDescription>
         </Alert>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Téléchargement groupé</CardTitle>
+          <CardDescription>
+            Un ZIP par classe, un bulletin par étudiant inscrit. L'archive
+            reprend exactement le PDF individuel ; un étudiant dont le bulletin
+            échoue est signalé dans un rapport joint, sans bloquer les autres.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="bulletin-lot-classe">Classe</Label>
+            <Select value={classeLotId} onValueChange={setClasseLotId}>
+              <SelectTrigger id="bulletin-lot-classe" className="w-64">
+                <SelectValue placeholder="Choisir" />
+              </SelectTrigger>
+              <SelectContent>
+                {classes.length === 0 ? (
+                  <SelectItem value="__aucune__" disabled>
+                    Aucune classe enregistrée
+                  </SelectItem>
+                ) : (
+                  classes.map((classe) => (
+                    <SelectItem key={classe.id} value={classe.id}>
+                      {classe.code}
+                      {classe.nom && classe.nom !== classe.code
+                        ? ` — ${classe.nom}`
+                        : ""}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => void telechargerLot()}
+            disabled={!classeLotId || !semestreId || telechargementLot}
+          >
+            {telechargementLot ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <FolderArchive className="mr-2 h-4 w-4" />
+            )}
+            Télécharger les bulletins de la classe (ZIP)
+          </Button>
+        </CardContent>
+      </Card>
 
       {bulletin && (
         <>

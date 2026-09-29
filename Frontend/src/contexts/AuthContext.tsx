@@ -60,7 +60,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   const clearSession = useCallback(() => {
-    authApi.logout();
+    // La deconnexion est asynchrone (revocation serveur depuis le lot 2)
+    // mais l'ecran n'a pas a l'attendre : la session locale est fermee
+    // immediatement, la revocation suit en tache de fond.
+    void authApi.logout();
     setUser(null);
     setIsLoading(false);
   }, []);

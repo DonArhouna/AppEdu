@@ -4,10 +4,14 @@ Gestion des calendriers annuels et découpage dynamique des tranches de paiement
 """
 
 from datetime import date
+from decimal import Decimal
 from typing import List, Optional
-from sqlalchemy import String, Date, Float, Integer, ForeignKey, Text
+from sqlalchemy import Float, Numeric, String, Date, Integer, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
+
+#: Deux decimales, la precision d'une monnaie ; 14 chiffres au total.
+MONEY = Numeric(14, 2)
 
 
 class SessionAcademique(Base, TimestampMixin):
@@ -48,7 +52,7 @@ class PeriodePaiement(Base, TimestampMixin):
     nom: Mapped[str] = mapped_column(String(100), nullable=False)
     mois: Mapped[str] = mapped_column(String(30), nullable=False)
     date_echeance: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    montant_estime: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    montant_estime: Mapped[Optional[Decimal]] = mapped_column(MONEY, nullable=True)
     pourcentage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ordre: Mapped[int] = mapped_column(Integer, nullable=False)
 

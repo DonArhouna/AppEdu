@@ -30,7 +30,67 @@ class Settings(BaseSettings):
     # Sécurité & Tokens JWT
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 8  # 8 heures
+    # Un access token vit une heure : c'est la fenetre d'exploitation d'un
+    # jeton intercepte. La session survit au jeton via le refresh token.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    # Anti-brute-force (lot 2). Le verrou suit le COMPTE : un attaquant
+    # distribue ses requetes sur des IP, jamais sur les comptes visees. Les
+    # trois valeurs sont des reglages d'exploitation, pas des constantes.
+    LOGIN_MAX_FAILED_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_MINUTES: int = 15
+    # Limiteur de debit en memoire : nombre d'ECHECS toleres par fenetre
+    # glissante, pour le couple (adresse, email tente). Un NAT d'ecole ne
+    # doit pas se bloquer lui-meme : les reussites ne comptent pas.
+    LOGIN_RATE_MAX_ATTEMPTS: int = 10
+    LOGIN_RATE_WINDOW_SECONDS: int = 300
+    # Les tentatives tracees ne vivent pas pour toujours : une table
+    # d'incidents qui grossit sans fin finit par n'etre jamais relue.
+    LOGIN_ATTEMPTS_RETENTION_DAYS: int = 90
+
+    # Sessions revocables (lot 2). Le refresh token vit une semaine, glisse
+    # a chaque rotation ; l'access token, lui, meurt au bout d'une heure et
+    # se renouvelle silencieusement. Revoquer la ligne ferme l'acces avant
+    # l'expiration.
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 7 * 24 * 60
+
+    # Derriere un reverse-proxy (nginx, traefik), l'adresse vue par l'API
+    # est celle du proxy : lire ``X-Forwarded-For`` est alors necessaire.
+    # Hors proxy, le header est ignore — un client le fabrique en une ligne.
+    TRUST_PROXY_HEADERS: bool = False
+
+    # Envoi d'emails (lot 4). Sans serveur configure (SMTP_HOST vide), aucun
+    # email ne part : l'envoi passe en mode SIMULATION, trace et lisible,
+    # pour qu'un institut puisse utiliser le module sans compte SMTP et pour
+    # que les tests ne dependent jamais d'un serveur exterieur.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_STARTTLS: bool = True
+    #: Expediteur affiche : « Institut X <no-reply@institut.org> ».
+    SMTP_FROM: str = "EduManagePro <no-reply@edumanagepro.local>"
+    #: En production, un email part en 10 secondes et peut echouer : l'envoi
+    # se fait hors de la requete HTTP, jamais en bloquant le secretaire.
+    EMAIL_SEND_TIMEOUT_SECONDS: int = 15
+
+    # Paiements en ligne (lot 4b). Tant qu'aucune passerelle reelle n'est
+    # branchee, le provider est ``simulation`` : la confirmation suit les
+    # regles du guichet et produit un Paiement + Recu normaux. Brancher Wave
+    # ou Orange Money reviendra a remplacer la fonction de confirmation.
+    PAYMENT_LINK_VALIDITY_DAYS: int = 7
+
+    # Multi-tenant (lot 6). En ``standalone`` (defaut), tout continue de
+    # pointer sur ``DATABASE_URL`` : une installation cliente ne sait même
+    # pas que le multi-tenant existe. En ``multi_tenant``, la base de
+    # contrôle (``DATABASE_URL``) porte le registre des écoles et chaque
+    # école reçoit sa base ``emp_tenant_{id}`` sur le même serveur.
+    #
+    # La résolution de la requête à l'école se fait par l'en-tête
+    # ``X-Tenant-ID`` ; le sous-domaine (``isi.edumanagepro.com``) viendra
+    # s'ajouter au même middleware le jour du déploiement, sans rien
+    # réécrire ailleurs.
+    TENANT_HEADER: str = "X-Tenant-ID"
 
     # Base de données PostgreSQL Asynchrone
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/edumanagepro"

@@ -55,6 +55,7 @@ const SalleDetail = lazy(() => import("./pages/SalleDetail"));
 const Utilisateurs = lazy(() => import("./pages/Utilisateurs"));
 const JournalAudit = lazy(() => import("./pages/JournalAudit"));
 const VerificationDocument = lazy(() => import("./pages/VerificationDocument"));
+const PaiementEnLigne = lazy(() => import("./pages/PaiementEnLigne"));
 const Profil = lazy(() => import("./pages/Profil"));
 const ParametresCompte = lazy(() => import("./pages/ParametresCompte"));
 const Login = lazy(() => import("./pages/Login"));
@@ -106,6 +107,8 @@ const App = () => (
             <Route path="/setup" element={<SetupWizard />} />
             <Route path="/verifier-document" element={<VerificationDocument />} />
             <Route path="/verifier-document/:id" element={<VerificationDocument />} />
+            {/* Page publique de la famille : gardée par le jeton du lien, sans compte. */}
+            <Route path="/paiement-en-ligne/:token" element={<PaiementEnLigne />} />
 
             {/* Main SaaS Application Routes */}
             <Route

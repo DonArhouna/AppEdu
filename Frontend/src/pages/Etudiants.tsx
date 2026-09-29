@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,8 @@ import {
   Trash2,
   Plus,
   Filter,
+  ChevronLeft,
+  ChevronRight,
   Users,
   GraduationCap,
   RefreshCw,
@@ -56,8 +59,12 @@ import type {
 import { toast } from "sonner";
 import { academicApi, etudiantsApi, sessionsApi, structureApi } from "@/services/apiClient";
 
+/** Taille de page du registre étudiant : réglée pour la lecture à l'écran. */
+const ETUDIANTS_PAR_PAGE = 25;
+
 const Etudiants = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterFiliere, setFilterFiliere] = useState("all");
   const [filterNiveau, setFilterNiveau] = useState("all");
@@ -68,55 +75,81 @@ const Etudiants = () => {
 
   const [sessions, setSessions] = useState<AcademicSession[]>([]);
   const [filieresList, setFilieresList] = useState<Filiere[]>([]);
+  const [page, setPage] = useState(1);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // -- react-query (page pilote du lot 5) -------------------------------
+  // La liste des étudiants est la donnée la plus consultée de
+  // l'application : mise en cache, réutilisation entre navigations,
+  // invalidation après une écriture. Les autres ressources (sessions,
+  // filières, classes) sont de petits référentiels stables : le chargement
+  // manuel reste, la migration les rattrapera page par page.
+  const etudiantsQuery = useQuery({
+    queryKey: ["etudiants"],
+    queryFn: async () => {
+      const res = await etudiantsApi.getAll();
+      if (res.error) throw new Error(res.error);
+      return (res.data || []) as StudentApi[];
+    },
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    if (etudiantsQuery.data) {
+      setStudents(
+        etudiantsQuery.data.map((s: StudentApi) => ({
+          id: s.id,
+          matricule: s.matricule,
+          nom: s.nom,
+          prenom: s.prenom,
+          email: s.email || "",
+          telephone: s.telephone || "",
+          dateNaissance: s.date_naissance || "",
+          lieuNaissance: s.lieu_naissance || "",
+          promotion: "",
+          filiere: s.filiere || "",
+          filiereId: s.filiere_id || "",
+          classeId: s.classe_id || "",
+          niveau: s.niveau || "",
+          cycle: s.niveau?.startsWith("Master") ? "Master" : s.niveau?.startsWith("Licence") ? "Licence" : "",
+          cycleId: "",
+          niveauId: "",
+          statut: s.statut || "",
+          creditsValides: undefined,
+          sessionId: s.session_id || "",
+        }))
+      );
+    }
+    if (etudiantsQuery.error) {
+      setError(etudiantsQuery.error.message);
+    }
+    setLoading(etudiantsQuery.isPending);
+  }, [etudiantsQuery.data, etudiantsQuery.error, etudiantsQuery.isPending]);
+
+  /** Invalide le cache après une écriture : la liste se recharge seule. */
+  const rafraichirEtudiants = () => {
+    void queryClient.invalidateQueries({ queryKey: ["etudiants"] });
+  };
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState<string | null>(null);
 
+  // Les référentiels stables (sessions, filières, classes) se chargent
+  // manuellement : petits, rarement modifiés, leur migration react-query
+  // suivra. La liste des étudiants, elle, passe par useQuery ci-dessus.
   const loadData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [etudiantsRes, sessionsRes, filieresRes, classesRes] = await Promise.all([
-        etudiantsApi.getAll(),
+      const [sessionsRes, filieresRes, classesRes] = await Promise.all([
         sessionsApi.getAll(),
         structureApi.getFilieres(),
-      academicApi.getClasses(),
+        academicApi.getClasses(),
       ]);
-
-      if (etudiantsRes.error) {
-        setError(etudiantsRes.error);
-        setStudents([]);
-      } else {
-        const raw = etudiantsRes.data || [];
-        setStudents(
-          raw.map((s: StudentApi) => ({
-            id: s.id,
-            matricule: s.matricule,
-            nom: s.nom,
-            prenom: s.prenom,
-            email: s.email || "",
-            telephone: s.telephone || "",
-            dateNaissance: s.date_naissance || "",
-            lieuNaissance: s.lieu_naissance || "",
-            promotion: "",
-            filiere: s.filiere || "",
-            filiereId: s.filiere_id || "",
-            classeId: s.classe_id || "",
-            niveau: s.niveau || "",
-            cycle: s.niveau?.startsWith("Master") ? "Master" : s.niveau?.startsWith("Licence") ? "Licence" : "",
-            cycleId: "",
-            niveauId: "",
-            statut: s.statut || "",
-            creditsValides: undefined,
-            sessionId: s.session_id || "",
-          }))
-        );
-      }
 
       if (sessionsRes.data) {
         setSessions(sessionsRes.data);
@@ -165,6 +198,25 @@ const Etudiants = () => {
   const availableCycles = Array.from(new Set(students.map((student) => student.cycle).filter(Boolean)));
   const availableNiveaux = Array.from(new Set(students.map((student) => student.niveau).filter(Boolean)));
 
+  // -- Pagination (lot 5) -----------------------------------------------
+  // Le filtrage reste local (les données sont déjà là) : paginer la vue,
+  // pas la requête — la recherche ne déclenche aucun aller-retour.
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / ETUDIANTS_PAR_PAGE));
+  const pageActuelle = Math.min(page, totalPages);
+  const etudiantsPages = useMemo(
+    () =>
+      filteredStudents.slice(
+        (pageActuelle - 1) * ETUDIANTS_PAR_PAGE,
+        pageActuelle * ETUDIANTS_PAR_PAGE
+      ),
+    [filteredStudents, pageActuelle]
+  );
+  // Un filtre ou une recherche ramène toujours à la première page : rester
+  // sur la page 4 d'une liste vide ferait croire à une absence de résultats.
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, filterFiliere, filterClasse, filterNiveau, filterCycle, filterSession]);
+
   const handleSaveStudent = async (student: Student) => {
     const profilePayload = {
       nom: student.nom,
@@ -210,6 +262,9 @@ const Etudiants = () => {
 
     setDialogOpen(false);
     setSelectedStudent(null);
+    // Le cache react-query s'invalide : la liste se recharge seule, et les
+    // autres pages qui la consomment verront la donnée fraîche.
+    rafraichirEtudiants();
     await loadData();
     return true;
   };
@@ -231,6 +286,7 @@ const Etudiants = () => {
         toast.error(`Erreur : ${res.error}`);
       } else {
         toast.success("Dossier étudiant supprimé.");
+        rafraichirEtudiants();
         await loadData();
       }
       setDeleteDialogOpen(false);
@@ -438,7 +494,7 @@ const Etudiants = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredStudents.map((student) => {
+                  {etudiantsPages.map((student) => {
                     const studentSession = sessions.find((s) => s.id === student.sessionId);
                     return (
                       <TableRow key={student.id} className="hover:bg-muted/30">
@@ -512,6 +568,38 @@ const Etudiants = () => {
                   })}
                 </TableBody>
               </Table>
+            )}
+
+            {/* Pied de pagination : visible dès qu'il y a plus d'une page. */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between border-t px-4 py-3">
+                <p className="text-sm text-muted-foreground">
+                  {(pageActuelle - 1) * ETUDIANTS_PAR_PAGE + 1}–
+                  {Math.min(pageActuelle * ETUDIANTS_PAR_PAGE, filteredStudents.length)} sur{' '}
+                  {filteredStudents.length} étudiant(s)
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={pageActuelle <= 1}
+                  >
+                    <ChevronLeft className="mr-1 h-4 w-4" />Précédent
+                  </Button>
+                  <span className="text-sm font-medium">
+                    Page {pageActuelle} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={pageActuelle >= totalPages}
+                  >
+                    Suivant<ChevronRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
             )}
           </div>
         </CardContent>

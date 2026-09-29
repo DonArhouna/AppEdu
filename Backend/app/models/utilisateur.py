@@ -57,6 +57,18 @@ class Utilisateur(Base, TimestampMixin):
     is_superuser: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_login: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Anti-brute-force (lot 2). Le verrou suit le compte, pas la machine :
+    # c'est lui qu'on protege, pas l'adresse qui tente de se connecter en son
+    # nom. ``failed_login_count`` compte les echecs **consécutifs** ; une
+    # reussite le remet a zero, et la reussite d'un compte verrouille est de
+    # toute facon refusee avant.
+    locked_until: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    failed_login_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
     @property
     def full_name(self) -> str:
         return f"{self.prenom} {self.nom}".strip()

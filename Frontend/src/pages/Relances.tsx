@@ -25,6 +25,7 @@ import {
   CheckCircle2,
   Clock,
   Loader2,
+  Mail,
   Phone,
   Printer,
   RefreshCw,
@@ -198,6 +199,29 @@ const RelancesPage = () => {
     document.body.removeChild(lien);
     URL.revokeObjectURL(url);
     toast.success("Lettre téléchargée.");
+  };
+
+  /**
+   * Envoie la lettre par email. Un 502 (« echec ») reste sur l'écran : la
+   * relance est conservée, l'envoi se retente — l'application ne prétend
+   * jamais avoir contacté un étudiant qu'elle n'a pas contacté.
+   */
+  const envoyerParEmail = async (relanceId: string) => {
+    const resultat = await relancesApi.envoyerLettreEmail(relanceId);
+    if (resultat.error || !resultat.data) {
+      toast.error(extractErrorMessage(resultat.error, "Envoi impossible."));
+      return;
+    }
+    const statut = resultat.data.email_statut;
+    if (statut === "simule") {
+      toast.warning(
+        "Envoi simulé : aucun serveur SMTP n'est configuré. La relance est tracée, mais aucun email n'est parti.",
+        { duration: 8000 }
+      );
+    } else {
+      toast.success("Lettre envoyée par email.");
+    }
+    await charger();
   };
 
   if (chargement && !synthese) {
@@ -531,6 +555,26 @@ const RelancesPage = () => {
                                 <Printer className="mr-2 h-4 w-4" />
                                 Lettre
                               </Button>
+                              {peutRelancer && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => void envoyerParEmail(relance.id)}
+                                  title={
+                                    relance.email_statut === "envoye"
+                                      ? "Lettre déjà envoyée — cliquer renvoie une copie"
+                                      : relance.email_statut === "echec"
+                                        ? "Dernier envoi échoué — retenter"
+                                        : "Envoyer la lettre par email"
+                                  }
+                                >
+                                  <Mail className="mr-2 h-4 w-4" />
+                                  Email
+                                  {relance.email_statut === "echec" && (
+                                    <span className="ml-1 h-2 w-2 rounded-full bg-destructive" aria-hidden />
+                                  )}
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>

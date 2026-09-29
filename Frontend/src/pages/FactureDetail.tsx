@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Clock,
   CheckCircle2,
+  Link2 as LinkIcon,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { financesApi, extractErrorMessage, setupApi } from "@/services/apiClient";
@@ -96,6 +97,39 @@ const FactureDetail = () => {
     window.print();
   };
 
+  /**
+   * Émet un lien de paiement pour le reste à payer, et le copie. Le jeton
+   * ne repassera jamais par l'API : le lien copié ici est la seule copie —
+   * à transmettre à la famille tout de suite.
+   */
+  const handleLienPaiement = async () => {
+    if (!facture) return;
+    const resultat = await financesApi.creerLienPaiement({ facture_id: facture.id });
+    if (resultat.error || !resultat.data) {
+      toast({
+        title: "Lien non créé",
+        description: extractErrorMessage(resultat.error, "Le lien de paiement n'a pas pu être émis."),
+        variant: "destructive",
+      });
+      return;
+    }
+    const urlAbsolue = `${window.location.origin}${resultat.data.lien}`;
+    try {
+      await navigator.clipboard.writeText(urlAbsolue);
+      toast({
+        title: "Lien de paiement copié",
+        description: `Valide jusqu'au ${new Date(resultat.data.expires_le).toLocaleDateString("fr-FR")}. Transmettez-le à la famille — il ne sera plus affiché.`,
+      });
+    } catch {
+      toast({
+        title: "Lien de paiement créé",
+        description: urlAbsolue,
+        // Un lien non copiable doit rester lisible : durée longue.
+        duration: 30000,
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -163,6 +197,12 @@ const FactureDetail = () => {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {resteAPayer > 0 && (
+            <Button onClick={() => void handleLienPaiement()}>
+              <LinkIcon className="mr-2 h-4 w-4" />
+              Lien de paiement
+            </Button>
+          )}
           <Button variant="outline" onClick={handleDownload}>
             <Download className="mr-2 h-4 w-4" />
             Télécharger

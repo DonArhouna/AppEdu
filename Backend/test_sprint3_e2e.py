@@ -215,6 +215,18 @@ async def run_e2e_tests():
         assert password_update.status_code == 204, password_update.text
         print("  [OK] Modification du profil et du mot de passe via l'API.")
 
+        # Depuis le durcissement de l'authentification (lot 2), changer de
+        # mot de passe FERME les sessions ouvertes : l'ancien jeton, encore
+        # non-expire, ne vaut plus rien. La suite se reconnecte — c'est
+        # precisement le comportement attendu, pas une regression.
+        reconnexion = await client.post(
+            "/api/v1/auth/login",
+            json={"email": TEST_ADMIN_EMAIL, "password": "Test-Only-2026!Updated"},
+        )
+        assert reconnexion.status_code == 200, reconnexion.text
+        token = reconnexion.json()["access_token"]
+        print("  [OK] Sessions fermees par le changement de mot de passe : reconnexion.")
+
         # -------------------------------------------------------------------
         # ÉTAPE 7 : Protection des données métier & session académique
         # -------------------------------------------------------------------
@@ -931,10 +943,20 @@ async def run_e2e_tests():
         )
         assert deleted_converted_student.status_code == 204
 
+        # L'etudiant a deux paiements encaisses (recus REC-*) : la suppression
+        # est refusee (migration 0023 : FK RESTRICT + garde endpoint).  Les
+        # pieces comptables se conservent ; le dossier reste consultable.
         deleted_student = await client.delete(
             f"/api/v1/etudiants/{etudiant_id}", headers=auth_headers
         )
-        assert deleted_student.status_code == 204
+        assert deleted_student.status_code == 409, deleted_student.text
+        assert "paiement" in deleted_student.json()["detail"].lower()
+        still_there = await client.get(
+            f"/api/v1/etudiants/{etudiant_id}", headers=auth_headers
+        )
+        assert still_there.status_code == 200, (
+            "Un refus de suppression doit laisser le dossier intact."
+        )
         deleted_external_student = await client.delete(
             f"/api/v1/etudiants/{external_student_id}", headers=auth_headers
         )
@@ -948,12 +970,16 @@ async def run_e2e_tests():
         assert updated.status_code == 200
         assert updated.json()["description"] == "Session mise à jour par l'API"
 
+        # La session porte le dossier (non supprimable : il a des paiements)
+        # et ses ecritures : la destruction est refusee, la cloture reste la
+        # voie normale.
         deleted = await client.delete(
             f"/api/v1/sessions/{data7['id']}",
             headers=auth_headers,
         )
-        assert deleted.status_code == 204
-        print("  [OK] Modification et suppression de session validées.")
+        assert deleted.status_code == 409, deleted.text
+        assert deleted.json()["detail"], "Le refus doit dire pourquoi."
+        print("  [OK] Modification de session validée ; suppression refusée sur session avec écritures comptables.")
 
     print("\n==================================================================")
     print("   PARCOURS COMPLET SETUP -> LOGIN -> DASHBOARD VALIDÉ (7/7) !   ")
